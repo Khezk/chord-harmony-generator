@@ -222,7 +222,8 @@ INDEX_TEMPLATE = """
         color: #9ca3af;
         margin-bottom: 0.1rem;
       }
-      .midi-advanced-grid select {
+      .midi-advanced-grid select,
+      .midi-advanced-grid input[type="number"] {
         width: 100%;
         padding: 0.35rem 0.5rem;
         border-radius: 0.4rem;
@@ -638,6 +639,11 @@ INDEX_TEMPLATE = """
                   <option value="block" data-mode="piano" {% if midi_pattern == 'block' %}selected{% endif %}>Piano: block chords</option>
                 </select>
               </div>
+              <div>
+                <label for="midi_bpm">BPM (optional)</label>
+                <input type="number" id="midi_bpm" name="midi_bpm" min="20" max="400" step="1" placeholder="Pattern default" value="{{ midi_bpm_form }}">
+                <span class="hint" style="display:block;margin-top:0.25rem;">Leave blank to use the default tempo for the selected mode and rhythm pattern.</span>
+              </div>
             </div>
             <p class="hint" style="margin-top: 0.5rem;">
               Changing mode or pattern will regenerate the MIDI file the next time you click “Generate Harmony”.
@@ -783,6 +789,7 @@ def index():
     progression_text = ""
     midi_mode = "woodwind"
     midi_pattern = "default"
+    midi_bpm_form = ""
     midi_available = False
     weights_form = _weights_to_form(default_weights())
     chord_voicings = []
@@ -796,6 +803,7 @@ def index():
         voices_raw = request.form.get("voices", "").strip() or "4"
         midi_mode = request.form.get("midi_mode", "").strip() or "woodwind"
         midi_pattern = request.form.get("midi_pattern", "").strip() or "default"
+        midi_bpm_form = request.form.get("midi_bpm", "").strip()
         weights = weights_from_form(request.form)
         weights_form = _weights_to_form(weights)
         locked_backend, locked_form = _parse_locked_voicings(
@@ -811,9 +819,20 @@ def index():
         except ValueError:
             error = "Number of voices must be an integer between 4 and 6."
         else:
-            if not progression_text:
+            midi_bpm_override = None
+            if midi_bpm_form:
+                try:
+                    bpm_val = int(float(midi_bpm_form))
+                except ValueError:
+                    error = "BPM must be a number, or leave blank for the pattern default."
+                else:
+                    if not (20 <= bpm_val <= 400):
+                        error = "BPM must be between 20 and 400."
+                    else:
+                        midi_bpm_override = bpm_val
+            if not error and not progression_text:
                 error = "Please enter at least one chord."
-            else:
+            if not error and progression_text:
                 try:
                     chords = parse_progression(progression_text)
                 except ValueError as e:
@@ -836,6 +855,7 @@ def index():
                                 filename="output.mid",
                                 mode=midi_mode,
                                 pattern=midi_pattern,
+                                bpm=midi_bpm_override,
                             )
                             midi_available = True
                         except ImportError:
@@ -893,6 +913,7 @@ def index():
         piano_roll_num_pitches=piano_roll_num_pitches,
         midi_mode=midi_mode,
         midi_pattern=midi_pattern,
+        midi_bpm_form=midi_bpm_form,
         voices=voices,
         progression=progression_text,
         midi_available=midi_available,

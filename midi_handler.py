@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from harmony import HarmonyResult
 
@@ -8,11 +8,36 @@ from harmony import HarmonyResult
 MidiMode = Literal["woodwind", "rnb", "piano"]
 
 
+def _resolved_rhythm_pattern(mode: MidiMode, pattern: str) -> str:
+    """Resolve \"default\" to the concrete rhythm/voicing name for the given mode."""
+    if pattern != "default":
+        return pattern
+    if mode == "rnb":
+        return "straight"
+    if mode == "piano":
+        return "split"
+    return "default"
+
+
+def _default_bpm(mode: MidiMode, pattern: str) -> int:
+    """Tempo when the user leaves BPM blank: native default for mode + pattern."""
+    rp = _resolved_rhythm_pattern(mode, pattern)
+    defaults: dict[tuple[MidiMode, str], int] = {
+        ("woodwind", "default"): 80,
+        ("rnb", "straight"): 80,
+        ("rnb", "syncopated"): 80,
+        ("piano", "split"): 80,
+        ("piano", "block"): 80,
+    }
+    return defaults.get((mode, rp), 80)
+
+
 def export_harmony_to_midi(
     result: HarmonyResult,
     filename: str = "output.mid",
     mode: MidiMode = "woodwind",
     pattern: str = "default",
+    bpm: Optional[int] = None,
 ) -> None:
     """
     High-level MIDI exporter that can be reused by other programs.
@@ -21,27 +46,30 @@ def export_harmony_to_midi(
       - \"woodwind\": one part per voice, woodwind instruments (original behaviour)
       - \"rnb\": bass + guitar (+ simple drums) groove
       - \"piano\": single piano part with simple voicing patterns
+    bpm:
+      If set, used as MIDI tempo. If None, uses :func:`_default_bpm` for the mode/pattern.
     """
+    resolved_bpm = bpm if bpm is not None else _default_bpm(mode, pattern)
     if mode == "rnb":
-        _export_rnb_band(result, filename, pattern=pattern)
+        _export_rnb_band(result, filename, pattern=pattern, bpm=resolved_bpm)
     elif mode == "piano":
-        _export_piano(result, filename, pattern=pattern)
+        _export_piano(result, filename, pattern=pattern, bpm=resolved_bpm)
     else:
-        _export_woodwind(result, filename)
+        _export_woodwind(result, filename, bpm=resolved_bpm)
 
 
-def _base_score():
+def _base_score(bpm: int):
     from music21 import stream, tempo  # type: ignore
 
     s = stream.Score()
-    s.append(tempo.MetronomeMark(number=80))
+    s.append(tempo.MetronomeMark(number=bpm))
     return s
 
 
-def _export_woodwind(result: HarmonyResult, filename: str) -> None:
+def _export_woodwind(result: HarmonyResult, filename: str, bpm: int) -> None:
     from music21 import stream, note, chord, instrument  # type: ignore
 
-    s = _base_score()
+    s = _base_score(bpm)
     num_voices = len(result.voices)
 
     woodwinds = [
@@ -80,10 +108,12 @@ def _export_woodwind(result: HarmonyResult, filename: str) -> None:
     s.write("midi", fp=filename)
 
 
-def _export_rnb_band(result: HarmonyResult, filename: str, pattern: str = "straight") -> None:
+def _export_rnb_band(
+    result: HarmonyResult, filename: str, pattern: str = "straight", bpm: int = 80
+) -> None:
     from music21 import stream, note, instrument, meter  # type: ignore
 
-    s = _base_score()
+    s = _base_score(bpm)
     s.append(meter.TimeSignature("4/4"))
 
     num_voices = len(result.voices)
@@ -148,10 +178,12 @@ def _export_rnb_band(result: HarmonyResult, filename: str, pattern: str = "strai
     s.write("midi", fp=filename)
 
 
-def _export_piano(result: HarmonyResult, filename: str, pattern: str = "split") -> None:
+def _export_piano(
+    result: HarmonyResult, filename: str, pattern: str = "split", bpm: int = 80
+) -> None:
     from music21 import stream, note, instrument, meter, chord as m21chord  # type: ignore
 
-    s = _base_score()
+    s = _base_score(bpm)
     s.append(meter.TimeSignature("4/4"))
 
     num_voices = len(result.voices)
