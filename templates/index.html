@@ -80,6 +80,24 @@ textarea {
         margin-top: 0.5rem;
         font-size: 0.85rem;
       }
+      .ux-warn-bundle .ux-warn-list {
+        margin: 0.35rem 0 0 1.15rem;
+        padding: 0;
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+      .ux-warn-bundle .ux-warn-list li {
+        margin-bottom: 0.2rem;
+      }
+      .sticky-notice-block .sticky-notice-list {
+        margin: 0.4rem 0 0 1.15rem;
+        padding: 0;
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
+      .sticky-notice-block .sticky-notice-list li {
+        margin-bottom: 0.35rem;
+      }
 .btn-row {
   display: flex;
   gap: 0.75rem;
@@ -403,13 +421,23 @@ table.voices tr:nth-child(even) td {
   {% endif %}
 {% endwith %}
 
-{% if sticky_notice %}
-  <div class="notice-warn" role="status">{{ sticky_notice }}</div>
+{% if sticky_notices %}
+  <div class="notice-warn sticky-notice-block" role="status">
+    <strong>Previous result shown</strong>
+    <ul class="sticky-notice-list">
+      {% for line in sticky_notices %}<li>{{ line }}</li>{% endfor %}
+    </ul>
+  </div>
 {% endif %}
 
-{% for w in ux_warnings %}
-  <div class="notice-warn" role="status">{{ w }}</div>
-{% endfor %}
+{% if ux_warnings %}
+  <div class="notice-warn ux-warn-bundle" role="status">
+    <strong>Locks</strong>
+    <ul class="ux-warn-list">
+      {% for w in ux_warnings %}<li>{{ w }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
 
 <form method="post" action="{{ url_for('index') }}" id="harmony-form">
   <div class="field-group">
@@ -515,11 +543,43 @@ table.voices tr:nth-child(even) td {
           </div>
   </details>
 
+  <details class="midi-advanced">
+    <summary>MIDI advanced options</summary>
+    <div class="midi-advanced-grid">
+      <div>
+        <label for="midi_mode">Playback mode</label>
+        <select id="midi_mode" name="midi_mode">
+          <option value="woodwind" {% if midi_mode == 'woodwind' %}selected{% endif %}>Woodwinds (one voice per instrument)</option>
+          <option value="rnb" {% if midi_mode == 'rnb' %}selected{% endif %}>R&amp;B Band (bass + guitar + drums)</option>
+          <option value="piano" {% if midi_mode == 'piano' %}selected{% endif %}>Piano (voicing patterns)</option>
+        </select>
+      </div>
+      <div>
+        <label for="midi_pattern">Rhythm / voicing pattern</label>
+        <select id="midi_pattern" name="midi_pattern">
+          <option value="default" data-mode="all" {% if midi_pattern == 'default' %}selected{% endif %}>Default for selected mode</option>
+          <option value="straight" data-mode="rnb" {% if midi_pattern == 'straight' %}selected{% endif %}>Straight groove (R&amp;B)</option>
+          <option value="syncopated" data-mode="rnb" {% if midi_pattern == 'syncopated' %}selected{% endif %}>Syncopated groove (R&amp;B)</option>
+          <option value="split" data-mode="piano" {% if midi_pattern == 'split' %}selected{% endif %}>Piano: bass+top then inner voices</option>
+          <option value="block" data-mode="piano" {% if midi_pattern == 'block' %}selected{% endif %}>Piano: block chords</option>
+        </select>
+      </div>
+      <div>
+        <label for="midi_bpm">BPM (optional)</label>
+        <input type="number" id="midi_bpm" name="midi_bpm" min="20" max="400" step="1" placeholder="Pattern default" value="{{ midi_bpm_form }}">
+        <span class="hint" style="display:block;margin-top:0.25rem;">Leave blank to use the default tempo for the selected mode and rhythm pattern.</span>
+      </div>
+    </div>
+    <p class="hint" style="margin-top: 0.5rem;">
+      These apply the next time you click Generate Harmony (MIDI is written after a successful run).
+    </p>
+  </details>
+
   <div class="btn-row">
     <button class="primary" type="submit">
       ▶ Generate Harmony
     </button>
-    <span class="pill"><strong>Tip</strong> Harmony is recomputed instantly as you tweak chords.</span>
+    <span class="pill"><strong>Tip</strong> Click Generate after you change chords, weights, or MIDI options to recompute harmony and export.</span>
   </div>
 
 {% if result %}
@@ -623,41 +683,39 @@ table.voices tr:nth-child(even) td {
               <span class="hint">To export MIDI, install <code>music21</code> (already in <code>requirements.txt</code>).</span>
             {% endif %}
           </div>
-
-    <details class="midi-advanced">
-      <summary>MIDI advanced options</summary>
-      <div class="midi-advanced-grid">
-        <div>
-          <label for="midi_mode">Playback mode</label>
-          <select id="midi_mode" name="midi_mode">
-            <option value="woodwind" {% if midi_mode == 'woodwind' %}selected{% endif %}>Woodwinds (one voice per instrument)</option>
-            <option value="rnb" {% if midi_mode == 'rnb' %}selected{% endif %}>R&amp;B Band (bass + guitar + drums)</option>
-            <option value="piano" {% if midi_mode == 'piano' %}selected{% endif %}>Piano (voicing patterns)</option>
-          </select>
-        </div>
-        <div>
-          <label for="midi_pattern">Rhythm / voicing pattern</label>
-          <select id="midi_pattern" name="midi_pattern">
-            <option value="default" data-mode="all" {% if midi_pattern == 'default' %}selected{% endif %}>Default for selected mode</option>
-            <option value="straight" data-mode="rnb" {% if midi_pattern == 'straight' %}selected{% endif %}>Straight groove (R&amp;B)</option>
-            <option value="syncopated" data-mode="rnb" {% if midi_pattern == 'syncopated' %}selected{% endif %}>Syncopated groove (R&amp;B)</option>
-            <option value="split" data-mode="piano" {% if midi_pattern == 'split' %}selected{% endif %}>Piano: bass+top then inner voices</option>
-            <option value="block" data-mode="piano" {% if midi_pattern == 'block' %}selected{% endif %}>Piano: block chords</option>
-          </select>
-        </div>
-        <div>
-          <label for="midi_bpm">BPM (optional)</label>
-          <input type="number" id="midi_bpm" name="midi_bpm" min="20" max="400" step="1" placeholder="Pattern default" value="{{ midi_bpm_form }}">
-          <span class="hint" style="display:block;margin-top:0.25rem;">Leave blank to use the default tempo for the selected mode and rhythm pattern.</span>
-        </div>
-      </div>
-      <p class="hint" style="margin-top: 0.5rem;">
-        Changing mode or pattern will regenerate the MIDI file the next time you click “Generate Harmony”.
-      </p>
-    </details>
   </div>
 {% endif %}
 </form>
+
+<script>
+(function() {
+  var modeSel = document.getElementById("midi_mode");
+  var patSel = document.getElementById("midi_pattern");
+  if (!modeSel || !patSel) return;
+  var allPatternOptions = Array.prototype.slice.call(patSel.options);
+  function filterPatternsByMode() {
+    var mode = modeSel.value || "woodwind";
+    var prevValue = patSel.value;
+    patSel.innerHTML = "";
+    allPatternOptions.forEach(function(opt) {
+      var m = opt.getAttribute("data-mode") || "all";
+      if (m === "all" || m === mode) {
+        patSel.appendChild(opt.cloneNode(true));
+      }
+    });
+    var stillThere = Array.prototype.some.call(patSel.options, function(o) {
+      return o.value === prevValue;
+    });
+    if (stillThere) {
+      patSel.value = prevValue;
+    } else {
+      patSel.value = "default";
+    }
+  }
+  filterPatternsByMode();
+  modeSel.addEventListener("change", filterPatternsByMode);
+})();
+</script>
 
 {% if result %}
 <script>
@@ -696,35 +754,6 @@ table.voices tr:nth-child(even) td {
         }
       });
     });
-
-    // Show only patterns that belong to the selected playback mode.
-    (function () {
-      var modeSel = document.getElementById("midi_mode");
-      var patSel = document.getElementById("midi_pattern");
-      if (!modeSel || !patSel) return;
-      var allPatternOptions = Array.prototype.slice.call(patSel.options);
-      function filterPatternsByMode() {
-        var mode = modeSel.value || "woodwind";
-        var prevValue = patSel.value;
-        patSel.innerHTML = "";
-        allPatternOptions.forEach(function(opt) {
-          var m = opt.getAttribute("data-mode") || "all";
-          if (m === "all" || m === mode) {
-            patSel.appendChild(opt.cloneNode(true));
-          }
-        });
-        var stillThere = Array.prototype.some.call(patSel.options, function(o) {
-          return o.value === prevValue;
-        });
-        if (stillThere) {
-          patSel.value = prevValue;
-        } else {
-          patSel.value = "default";
-        }
-      }
-      filterPatternsByMode();
-      modeSel.addEventListener("change", filterPatternsByMode);
-    })();
   })();
 </script>
 {% endif %}

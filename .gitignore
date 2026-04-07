@@ -1,3 +1,7 @@
 /.venv
 /output.mid
+/.harmony_sticky_fallback.json
 /__pycache__
+**/__pycache__/
+*.py[cod]
+.pytest_cache/

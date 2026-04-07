@@ -97,7 +97,7 @@ Cmaj | Fmaj | G7 | Cmaj
 Am | Dm | G | C
 ```
 
-程式會印出各聲部在整段進行上的簡單文字表示。若已安裝 `music21`（列於 `requirements.txt`），還會在同一資料夾寫入名為 `output.mid` 的 MIDI 檔。
+程式會印出各聲部在整段進行上的簡單文字表示。若已安裝 `music21`（列於 `requirements.txt`），會將 `output.mid` 寫在與 `main.py` 相同的資料夾（與終端機目前工作目錄無關）。
 
 ### 網頁介面使用
 
@@ -119,7 +119,9 @@ launch_harmony_web.bat
 - **Generate Harmony** 按鈕會計算並顯示：
   - 和弦序列
   - 各聲部（由高到低）以表格顯示的音名
-- 若已安裝 `music21`，會顯示 **Download MIDI** 連結以下載 `output.mid`。
+- 若已安裝 `music21`，會顯示 **Download MIDI** 連結以下載 `output.mid`（檔案寫在與 `web_app.py` 相同的資料夾，與終端機目前工作目錄無關）。
+
+若之後送出表單發生錯誤（例如權重或和弦格式錯誤），介面會盡量保留並顯示**上一次成功**的結果表（使用瀏覽器 session）；若進行很長導致無法寫入 cookie，可能無法保留。在公開環境請設定隨機的 `FLASK_SECRET_KEY`。
 
 #### 鎖定與 What-if（排列控制）
 
@@ -278,11 +280,11 @@ or:
 Am | Dm | G | C
 ```
 
-The program prints a simple text representation of each voice over the progression. If `music21` is installed (from `requirements.txt`), it can also write a MIDI file named `output.mid` in the same folder.
+The program prints a simple text representation of each voice over the progression. If `music21` is installed (from `requirements.txt`), it writes `output.mid` next to `main.py` (not necessarily the shell’s current working directory).
 
 ## Web UI Usage
 
-There is also a small web interface built with Flask. The UI uses a signed cookie session to **keep showing your last successful harmony** when a later submit fails validation (e.g. bad weights or progression). For anything beyond local use, set a strong random `FLASK_SECRET_KEY` in the environment so sessions cannot be forged.
+There is also a small web interface built with Flask. The UI uses a signed cookie session to **keep showing your last successful harmony** when a later submit fails validation (e.g. bad weights or progression). For anything beyond local use, set a strong random `FLASK_SECRET_KEY` in the environment so sessions cannot be forged. The web app writes `output.mid` next to `web_app.py` (not necessarily the shell’s current directory), and the download link uses that same path.
 
 1. Ensure the environment is set up (run `setup_harmony_app.bat` once).
 2. Launch the web UI:

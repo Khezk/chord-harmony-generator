@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Tuple, Sequence, Dict, Optional, Mapping
+from typing import Any, List, Tuple, Sequence, Dict, Optional, Mapping
 
 # Chord-tone roles for omission priority (when voices < chord tones).
 # Inclusion order: root, 3rd, 7th, 9th, 6th, 13th, 11th, 5th → 5th is always first to omit (e.g. G13 keeps 13th, F6/9 omits 5th).
@@ -485,6 +485,60 @@ def parse_progression(text: str) -> List[Chord]:
     if not tokens:
         raise ValueError("No chords found in progression.")
     return [parse_chord_symbol(tok) for tok in tokens]
+
+
+def chord_structure_fingerprint(ch: Chord) -> Tuple[Any, ...]:
+    """Stable tuple for comparing progressions using parser semantics (not lowercased text)."""
+    return (ch.root_pc, ch.bass_pc, tuple(sorted(ch.pitches)), ch.tone_roles)
+
+
+def progression_structure_fingerprint(text: str) -> Optional[Tuple[Tuple[Any, ...], ...]]:
+    """Return None if empty or progression cannot be parsed."""
+    if not (text or "").strip():
+        return None
+    try:
+        chords = parse_progression(text)
+    except ValueError:
+        return None
+    return tuple(chord_structure_fingerprint(c) for c in chords)
+
+
+def progressions_structurally_equal(a: str, b: str) -> bool:
+    fa = progression_structure_fingerprint(a)
+    fb = progression_structure_fingerprint(b)
+    if fa is None or fb is None:
+        return False
+    return fa == fb
+
+
+def chord_harmonic_fingerprint(ch: Chord) -> Tuple[int, Optional[int], Tuple[int, ...]]:
+    """Root, slash bass, and pitch classes only (ignores tone_roles / internal tuple shape)."""
+    return (ch.root_pc, ch.bass_pc, tuple(sorted(ch.pitches)))
+
+
+def progression_harmonic_fingerprint(text: str) -> Optional[Tuple[Tuple[int, Optional[int], Tuple[int, ...]], ...]]:
+    if not (text or "").strip():
+        return None
+    try:
+        chords = parse_progression(text)
+    except ValueError:
+        return None
+    return tuple(chord_harmonic_fingerprint(c) for c in chords)
+
+
+def progressions_harmonically_equal(a: str, b: str) -> bool:
+    ha = progression_harmonic_fingerprint(a)
+    hb = progression_harmonic_fingerprint(b)
+    if ha is None or hb is None:
+        return False
+    return ha == hb
+
+
+def progressions_equivalent_for_ui(a: str, b: str) -> bool:
+    """Structural match, or same root/bass/pitch-class set per step (handles tone_roles drift)."""
+    if progressions_structurally_equal(a, b):
+        return True
+    return progressions_harmonically_equal(a, b)
 
 
 def generate_harmony(

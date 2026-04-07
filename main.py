@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+
 from harmony import parse_progression, generate_harmony, export_to_midi
+
+CLI_MIDI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output.mid")
 
 
 def main() -> None:
@@ -66,8 +70,8 @@ def main() -> None:
     save = input("\nWrite MIDI file 'output.mid'? [Y/n]: ").strip().lower()
     if save in ("", "y", "yes"):
         try:
-            export_to_midi(result, filename="output.mid")
-            print("Wrote MIDI file: output.mid")
+            export_to_midi(result, filename=CLI_MIDI_PATH)
+            print(f"Wrote MIDI file: {CLI_MIDI_PATH}")
         except ImportError:
             print("music21 is not installed; cannot export MIDI.")
             print("Install with: pip install -r requirements.txt")

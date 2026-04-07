@@ -29,3 +29,11 @@ def test_parse_locked_index_out_of_range():
     a, b, w = parse_locked_voicings(raw, 4, 2)
     assert 0 in a and 9 not in a
     assert any("range" in x.lower() for x in w)
+
+
+def test_parse_locked_non_numeric_keys_warned():
+    raw = json.dumps({"0": [60, 64, 67, 72], "step_1": [48, 52, 55, 60]})
+    a, b, w = parse_locked_voicings(raw, 4, 4)
+    assert 0 in a
+    assert "1" not in b
+    assert any("key" in x.lower() or "indices" in x.lower() for x in w)

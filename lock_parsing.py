@@ -34,11 +34,13 @@ def parse_locked_voicings(
     dropped_voice = 0
     dropped_index = 0
     dropped_bad_type = 0
+    dropped_bad_key = 0
 
     for k, v in raw.items():
         try:
             idx = int(k)
         except (ValueError, TypeError):
+            dropped_bad_key += 1
             continue
         if not isinstance(v, list) or not v or not all(isinstance(x, int) for x in v):
             dropped_bad_type += 1
@@ -63,5 +65,9 @@ def parse_locked_voicings(
     if dropped_bad_type:
         warnings.append(
             f"Skipped {dropped_bad_type} invalid lock entr(y/ies) (expected a list of MIDI note numbers)."
+        )
+    if dropped_bad_key:
+        warnings.append(
+            f"Ignored {dropped_bad_key} lock key(s) that are not whole-number chord indices (0, 1, 2, …)."
         )
     return locked_backend, locked_form, warnings
