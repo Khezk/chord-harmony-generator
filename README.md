@@ -50,6 +50,8 @@ setup_harmony_app.bat
 - 啟動虛擬環境
 - 依 `requirements.txt` 安裝所需 Python 套件
 
+建議使用 **Python 3.10 或以上**（3.11+ 更佳）。`requirements.txt` 已固定套件版本以利重現環境。
+
 若欲手動安裝：
 
 ```bash
@@ -62,6 +64,14 @@ python -m venv .venv
 
 ```bash
 pip install -r requirements.txt
+```
+
+### 執行測試
+
+啟用虛擬環境後：
+
+```bash
+pytest
 ```
 
 ### 命令列使用
@@ -209,6 +219,8 @@ You don’t need to install Python or type any commands—just double‑click th
 
 ## Installation (with helper script)
 
+Use **Python 3.10 or newer** (3.11+ recommended). Dependency versions are pinned in `requirements.txt` for reproducible installs.
+
 From `chord-harmony-generator`, you can use the provided Windows setup script:
 
 ```bash
@@ -233,6 +245,14 @@ Then install dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+## Running tests
+
+With the virtual environment activated and dev dependencies installed (`pytest` is listed in `requirements.txt`):
+
+```bash
+pytest
 ```
 
 ## CLI Usage
@@ -262,7 +282,7 @@ The program prints a simple text representation of each voice over the progressi
 
 ## Web UI Usage
 
-There is also a small web interface built with Flask.
+There is also a small web interface built with Flask. The UI uses a signed cookie session to **keep showing your last successful harmony** when a later submit fails validation (e.g. bad weights or progression). For anything beyond local use, set a strong random `FLASK_SECRET_KEY` in the environment so sessions cannot be forged.
 
 1. Ensure the environment is set up (run `setup_harmony_app.bat` once).
 2. Launch the web UI:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import List, Tuple, Sequence, Dict, Optional
+from typing import List, Tuple, Sequence, Dict, Optional, Mapping
 
 # Chord-tone roles for omission priority (when voices < chord tones).
 # Inclusion order: root, 3rd, 7th, 9th, 6th, 13th, 11th, 5th → 5th is always first to omit (e.g. G13 keeps 13th, F6/9 omits 5th).
@@ -74,57 +75,205 @@ def default_weights() -> HarmonyWeights:
     return HarmonyWeights()
 
 
-def weights_from_form(form: Dict[str, str]) -> HarmonyWeights:
-    """Build HarmonyWeights from form data (e.g. request.form). Missing keys use defaults."""
-    def f(key: str, default: float) -> float:
-        v = form.get(key)
-        if v is None or v.strip() == "":
-            return default
-        try:
-            return float(v)
-        except ValueError:
-            return default
+# Form field names in UI order (for snapshot / repopulation).
+WEIGHT_FORM_KEYS: Tuple[str, ...] = (
+    "cost_static",
+    "cost_stepwise",
+    "cost_medium_step",
+    "cost_large_leap_base",
+    "cost_large_leap_per",
+    "cost_parallel_5_8",
+    "cost_direct_5_8",
+    "cost_voice_crossing",
+    "bonus_contrary",
+    "cost_wide_gap_base",
+    "cost_wide_gap_per",
+    "spacing_octave",
+    "cost_span_tight",
+    "cost_span_wide",
+    "span_tight_threshold",
+    "span_wide_threshold",
+    "range_low",
+    "range_high",
+    "max_spread",
+)
 
-    def i(key: str, default: int) -> int:
-        v = form.get(key)
-        if v is None or v.strip() == "":
-            return default
-        try:
-            return int(v)
-        except ValueError:
-            return default
+# Broad limits: large |cost| allowed for experimentation; MIDI 0–127; wide spread.
+_WEIGHT_FLOAT_ABS_MAX = 1.0e7
+_SPACING_OCTAVE_BOUNDS = (1, 96)
+_SPAN_THRESHOLD_BOUNDS = (0, 127)
+_MAX_SPREAD_BOUNDS = (1, 127)
+_MIDI_NOTE_BOUNDS = (0, 127)
 
-    def oi(key: str) -> Optional[int]:
-        v = form.get(key)
-        if v is None or v.strip() == "":
-            return None
-        try:
-            return int(v)
-        except ValueError:
-            return None
+_WEIGHT_FLOAT_FIELDS: Tuple[Tuple[str, str], ...] = (
+    ("cost_static", "Static voice"),
+    ("cost_stepwise", "Stepwise motion"),
+    ("cost_medium_step", "Medium step"),
+    ("cost_large_leap_base", "Large leap (base)"),
+    ("cost_large_leap_per", "Large leap (per semitone)"),
+    ("cost_parallel_5_8", "Parallel 5ths/8ves"),
+    ("cost_direct_5_8", "Direct 5ths/8ves"),
+    ("cost_voice_crossing", "Voice crossing"),
+    ("bonus_contrary", "Contrary motion bonus"),
+    ("cost_wide_gap_base", "Wide gap (base)"),
+    ("cost_wide_gap_per", "Wide gap (per semitone)"),
+    ("cost_span_tight", "Chord span tight cost"),
+    ("cost_span_wide", "Chord span wide cost"),
+)
 
+
+def weights_form_snapshot(form: Mapping[str, str]) -> Dict[str, str]:
+    """Raw strings from the form for every weight field (for repopulating the UI)."""
+    return {k: (form.get(k) or "").strip() for k in WEIGHT_FORM_KEYS}
+
+
+def parse_weights_from_form(form: Mapping[str, str]) -> Tuple[Optional[HarmonyWeights], List[str]]:
+    """
+    Parse HarmonyWeights from form data. Empty fields use defaults.
+
+    Returns (weights, errors). If errors is non-empty, weights is None.
+    Accepts broad numeric ranges (see module constants).
+    """
+    errors: List[str] = []
     d = default_weights()
-    return HarmonyWeights(
-        cost_static=f("cost_static", d.cost_static),
-        cost_stepwise=f("cost_stepwise", d.cost_stepwise),
-        cost_medium_step=f("cost_medium_step", d.cost_medium_step),
-        cost_large_leap_base=f("cost_large_leap_base", d.cost_large_leap_base),
-        cost_large_leap_per=f("cost_large_leap_per", d.cost_large_leap_per),
-        cost_parallel_5_8=f("cost_parallel_5_8", d.cost_parallel_5_8),
-        cost_direct_5_8=f("cost_direct_5_8", d.cost_direct_5_8),
-        cost_voice_crossing=f("cost_voice_crossing", d.cost_voice_crossing),
-        bonus_contrary=f("bonus_contrary", d.bonus_contrary),
-        cost_wide_gap_base=f("cost_wide_gap_base", d.cost_wide_gap_base),
-        cost_wide_gap_per=f("cost_wide_gap_per", d.cost_wide_gap_per),
-        spacing_octave=i("spacing_octave", d.spacing_octave),
-        cost_span_tight=f("cost_span_tight", d.cost_span_tight),
-        cost_span_wide=f("cost_span_wide", d.cost_span_wide),
-        span_tight_threshold=i("span_tight_threshold", d.span_tight_threshold),
-        span_wide_threshold=i("span_wide_threshold", d.span_wide_threshold),
-        range_low=oi("range_low"),
-        range_high=oi("range_high"),
-        max_spread=i("max_spread", d.max_spread),
+
+    float_vals: Dict[str, float] = {}
+    for key, label in _WEIGHT_FLOAT_FIELDS:
+        raw = (form.get(key) or "").strip()
+        if not raw:
+            float_vals[key] = getattr(d, key)
+            continue
+        try:
+            x = float(raw)
+        except ValueError:
+            errors.append(f"{label}: not a valid number")
+            continue
+        if not math.isfinite(x):
+            errors.append(f"{label}: must be a finite number")
+            continue
+        if abs(x) > _WEIGHT_FLOAT_ABS_MAX:
+            errors.append(f"{label}: absolute value must be ≤ {_WEIGHT_FLOAT_ABS_MAX:g}")
+            continue
+        float_vals[key] = x
+
+    if errors:
+        return None, errors
+
+    def parse_int_field(
+        key: str, label: str, default: int, lo: int, hi: int
+    ) -> Optional[int]:
+        raw = (form.get(key) or "").strip()
+        if not raw:
+            return default
+        try:
+            xf = float(raw)
+        except ValueError:
+            errors.append(f"{label}: not a valid number")
+            return None
+        if not math.isfinite(xf):
+            errors.append(f"{label}: must be a finite number")
+            return None
+        iv = int(xf)
+        if abs(xf - iv) > 1e-9:
+            errors.append(f"{label}: must be a whole number")
+            return None
+        if not (lo <= iv <= hi):
+            errors.append(f"{label}: must be between {lo} and {hi} (inclusive)")
+            return None
+        return iv
+
+    def parse_optional_midi(key: str, label: str) -> Optional[int]:
+        raw = (form.get(key) or "").strip()
+        if not raw:
+            return None
+        lo, hi = _MIDI_NOTE_BOUNDS
+        try:
+            xf = float(raw)
+        except ValueError:
+            errors.append(f"{label}: not a valid number")
+            return None
+        if not math.isfinite(xf):
+            errors.append(f"{label}: must be a finite number")
+            return None
+        iv = int(xf)
+        if abs(xf - iv) > 1e-9:
+            errors.append(f"{label}: must be a whole number")
+            return None
+        if not (lo <= iv <= hi):
+            errors.append(f"{label}: must be between {lo} and {hi} (MIDI)")
+            return None
+        return iv
+
+    spacing_octave = parse_int_field(
+        "spacing_octave", "Spacing (octave in semitones)", d.spacing_octave, *_SPACING_OCTAVE_BOUNDS
     )
+    span_tight_threshold = parse_int_field(
+        "span_tight_threshold",
+        "Span tight threshold",
+        d.span_tight_threshold,
+        *_SPAN_THRESHOLD_BOUNDS,
+    )
+    span_wide_threshold = parse_int_field(
+        "span_wide_threshold",
+        "Span wide threshold",
+        d.span_wide_threshold,
+        *_SPAN_THRESHOLD_BOUNDS,
+    )
+    max_spread = parse_int_field(
+        "max_spread", "Max chord spread", d.max_spread, *_MAX_SPREAD_BOUNDS
+    )
+
+    range_low = parse_optional_midi("range_low", "Range low (MIDI)")
+    range_high = parse_optional_midi("range_high", "Range high (MIDI)")
+
+    if errors:
+        return None, errors
+
+    assert spacing_octave is not None
+    assert span_tight_threshold is not None
+    assert span_wide_threshold is not None
+    assert max_spread is not None
+
+    if span_tight_threshold >= span_wide_threshold:
+        errors.append(
+            "Span tight threshold must be less than span wide threshold."
+        )
+    if range_low is not None and range_high is not None and range_low > range_high:
+        errors.append("Range low (MIDI) must be less than or equal to range high (MIDI).")
+    if errors:
+        return None, errors
+
+    w = HarmonyWeights(
+        cost_static=float_vals["cost_static"],
+        cost_stepwise=float_vals["cost_stepwise"],
+        cost_medium_step=float_vals["cost_medium_step"],
+        cost_large_leap_base=float_vals["cost_large_leap_base"],
+        cost_large_leap_per=float_vals["cost_large_leap_per"],
+        cost_parallel_5_8=float_vals["cost_parallel_5_8"],
+        cost_direct_5_8=float_vals["cost_direct_5_8"],
+        cost_voice_crossing=float_vals["cost_voice_crossing"],
+        bonus_contrary=float_vals["bonus_contrary"],
+        cost_wide_gap_base=float_vals["cost_wide_gap_base"],
+        cost_wide_gap_per=float_vals["cost_wide_gap_per"],
+        spacing_octave=spacing_octave,
+        cost_span_tight=float_vals["cost_span_tight"],
+        cost_span_wide=float_vals["cost_span_wide"],
+        span_tight_threshold=span_tight_threshold,
+        span_wide_threshold=span_wide_threshold,
+        range_low=range_low,
+        range_high=range_high,
+        max_spread=max_spread,
+    )
+    return w, []
+
+
+def weights_from_form(form: Dict[str, str]) -> HarmonyWeights:
+    """Strict parse; raises ValueError if any submitted field is invalid."""
+    w, errs = parse_weights_from_form(form)
+    if errs:
+        raise ValueError("; ".join(errs))
+    assert w is not None
+    return w
 
 
 @dataclass(frozen=True)
