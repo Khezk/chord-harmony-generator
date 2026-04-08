@@ -24,11 +24,11 @@
 
 1. **第一次使用前：設定一次**
    - 在檔案總管中打開本程式的資料夾 `chord-harmony-generator`。
-   - 找到 **`setup_harmony_app.bat`**，用滑鼠**連點兩下**執行。
+   - 找到 **`SETUP.bat`**，用滑鼠**連點兩下**執行。
    - 會跳出一個黑色視窗並自動安裝所需檔案，請**等它跑完**（看到「完成」或視窗關閉為止）。只需做這一次，之後不用重複。
 
 2. **每次要使用程式時**
-   - 在同一資料夾裡找到 **`launch_harmony_web.bat`**，用滑鼠**連點兩下**執行。
+   - 在同一資料夾裡找到 **`LAUNCH.bat`**，用滑鼠**連點兩下**執行。
    - 通常會自動開啟瀏覽器並進入和聲生成器頁面；若沒有，請自己打開瀏覽器，在網址列輸入：`http://127.0.0.1:5001/` 後按 Enter。
 
 3. **在網頁裡**
@@ -41,7 +41,7 @@
 在 `chord-harmony-generator` 目錄下可使用提供的 Windows 設定腳本：
 
 ```bash
-setup_harmony_app.bat
+SETUP.bat
 ```
 
 腳本會：
@@ -103,11 +103,11 @@ Am | Dm | G | C
 
 另提供以 Flask 建置的小型網頁介面。
 
-1. 先完成環境設定（執行一次 `setup_harmony_app.bat`）。
+1. 先完成環境設定（執行一次 `SETUP.bat`）。
 2. 啟動網頁介面：
 
 ```bash
-launch_harmony_web.bat
+LAUNCH.bat
 ```
 
 3. 在瀏覽器開啟 `http://127.0.0.1:5001/`（若未自動開啟）。
@@ -207,11 +207,11 @@ The core logic is in `harmony.py` and uses a simple search that chooses, for eac
 
 1. **First time only: one-time setup**
    - Open the program folder `chord-harmony-generator` in File Explorer.
-   - Find **`setup_harmony_app.bat`** and **double‑click** it.
+   - Find **`SETUP.bat`** and **double‑click** it.
    - A black window will open and install the required files. **Wait until it finishes** (you’ll see it complete or the window close). You only need to do this once.
 
 2. **Every time you want to use the app**
-   - In the same folder, find **`launch_harmony_web.bat`** and **double‑click** it.
+   - In the same folder, find **`LAUNCH.bat`** and **double‑click** it.
    - Your browser should open automatically to the harmony generator page. If it doesn’t, open your browser yourself and go to: **`http://127.0.0.1:5001/`**
 
 3. **On the web page**
@@ -226,7 +226,7 @@ Use **Python 3.10 or newer** (3.11+ recommended). Dependency versions are pinned
 From `chord-harmony-generator`, you can use the provided Windows setup script:
 
 ```bash
-setup_harmony_app.bat
+SETUP.bat
 ```
 
 This will:
@@ -286,11 +286,11 @@ The program prints a simple text representation of each voice over the progressi
 
 There is also a small web interface built with Flask. The UI uses a signed cookie session to **keep showing your last successful harmony** when a later submit fails validation (e.g. bad weights or progression). For anything beyond local use, set a strong random `FLASK_SECRET_KEY` in the environment so sessions cannot be forged. The web app writes `output.mid` next to `web_app.py` (not necessarily the shell’s current directory), and the download link uses that same path.
 
-1. Ensure the environment is set up (run `setup_harmony_app.bat` once).
+1. Ensure the environment is set up (run `SETUP.bat` once).
 2. Launch the web UI:
 
 ```bash
-launch_harmony_web.bat
+LAUNCH.bat
 ```
 
 3. Open your browser and go to `http://127.0.0.1:5001/` if it does not open automatically.

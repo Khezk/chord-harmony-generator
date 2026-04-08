@@ -16,7 +16,7 @@ pip install -r requirements.txt
 
 echo.
 echo Setup complete. You can now run:
-echo   launch_harmony_web.bat   ^(web GUI^)
+echo   LAUNCH.bat   ^(web GUI^)
 echo   python main.py           ^(CLI^)
 echo.
 pause

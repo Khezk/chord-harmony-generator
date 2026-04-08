@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 if not exist ".venv" (
     echo Virtual environment not found. Running setup first...
-    call setup_harmony_app.bat
+    call SETUP.bat
 )
 
 echo Activating virtual environment...
