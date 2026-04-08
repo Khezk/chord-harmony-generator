@@ -7,10 +7,13 @@ import re
 import time
 from dataclasses import asdict
 from flask import Flask, flash, request, redirect, url_for, render_template, send_file, session
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from harmony import (
     HarmonyResult,
     HarmonyWeights,
+    MAX_PROGRESSION_INPUT_CHARS,
+    MAX_PROGRESSION_CHORDS,
     parse_progression,
     generate_harmony,
     default_weights,
@@ -26,7 +29,12 @@ from lock_parsing import parse_locked_voicings as _parse_locked_voicings
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-insecure-change-for-public-deployment")
+# Cap POST body size so pasted progressions cannot exhaust memory (slightly above text limit).
+app.config["MAX_CONTENT_LENGTH"] = max(MAX_PROGRESSION_INPUT_CHARS * 4, 512 * 1024)
 logger = logging.getLogger(__name__)
+
+# What-if recomputes voicings per step; skip beyond this to keep responses fast.
+WHATIF_MAX_CHORDS = 32
 
 SESSION_STICKY_KEY = "harmony_sticky_v1"
 MIDI_FILENAME = "output.mid"
@@ -57,6 +65,8 @@ def _alternatives_from_path(
 ) -> list:
     alternatives_per_chord = []
     num_chords = len(chords)
+    if num_chords > WHATIF_MAX_CHORDS:
+        return [[] for _ in range(num_chords)]
     for k in range(num_chords):
         alts = get_chord_alternatives(chords, voices, weights, path_voicings, k)
         current = path_voicings[k]
@@ -88,7 +98,12 @@ def _piano_roll_bounds(result):
 # Register filter so template can show note names from MIDI numbers
 @app.template_filter("midi_to_name")
 def _midi_to_name_filter(midi_num):
-    return midi_to_name(int(midi_num)) if midi_num is not None else ""
+    if midi_num is None:
+        return ""
+    try:
+        return midi_to_name(int(midi_num))
+    except (TypeError, ValueError):
+        return ""
 
 
 def _display_music_accidentals(s: str) -> str:
@@ -362,6 +377,7 @@ def _sticky_display_parts(raw: dict, source: str) -> dict | None:
         source == "disk"
         and isinstance(disk_alts, list)
         and len(disk_alts) == n_steps
+        and n_steps <= WHATIF_MAX_CHORDS
     ):
         alternatives_per_chord = disk_alts
     else:
@@ -473,6 +489,16 @@ def _reconcile_midi_with_file(
     return midi_available, midi_export_error
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_too_large(_e: RequestEntityTooLarge):
+    flash(
+        "That request was too large (for example, an extremely long chord list). "
+        "Shorten the progression and try again.",
+        "error",
+    )
+    return redirect(url_for("index"))
+
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     error = None
@@ -495,6 +521,8 @@ def index():
     locked_chord_indices = set()
     lock_warnings: list[str] = []
     sticky_notices: list[str] = []
+    post_weights: HarmonyWeights | None = None
+    post_weight_errs: list[str] = []
 
     if request.method == "GET":
         g_parts, g_sticky_warn = _resolve_sticky_payload()
@@ -537,6 +565,7 @@ def index():
         midi_pattern = request.form.get("midi_pattern", "").strip() or "default"
         midi_bpm_form = request.form.get("midi_bpm", "").strip()
         weights_form = weights_form_snapshot(request.form)
+        post_weights, post_weight_errs = parse_weights_from_form(request.form)
         raw_locked = request.form.get("locked_voicings", "") or ""
         locked_voicings_json = raw_locked.strip() if raw_locked.strip() else "{}"
 
@@ -562,11 +591,10 @@ def index():
                     else:
                         midi_bpm_override = bpm_val
             if not error:
-                parsed, w_errs = parse_weights_from_form(request.form)
-                if w_errs:
-                    error = "Weights: " + " · ".join(w_errs)
+                if post_weight_errs:
+                    error = "Weights: " + " · ".join(post_weight_errs)
                 else:
-                    weights = parsed
+                    weights = post_weights
             if not error and not progression_text:
                 error = "Please enter at least one chord."
             if not error and progression_text and weights is not None:
@@ -675,11 +703,9 @@ def index():
                                 )
                         return redirect(url_for("index"))
 
-    form_weights_for_sticky: HarmonyWeights | None = None
-    if request.method == "POST":
-        _pw, _werrs = parse_weights_from_form(request.form)
-        if not _werrs:
-            form_weights_for_sticky = _pw
+    form_weights_for_sticky = (
+        post_weights if request.method == "POST" and not post_weight_errs else None
+    )
 
     if error:
         sticky, sticky_unusable = _try_restore_sticky(
@@ -754,6 +780,10 @@ def index():
         locked_chord_indices=locked_chord_indices,
         sticky_notices=sticky_notices,
         ux_warnings=ux_warnings,
+        whatif_disabled=bool(result and len(result.chords) > WHATIF_MAX_CHORDS),
+        whatif_max_chords=WHATIF_MAX_CHORDS,
+        max_progression_chars=MAX_PROGRESSION_INPUT_CHARS,
+        max_progression_chords=MAX_PROGRESSION_CHORDS,
         enumerate=enumerate,
         range=range,
     )

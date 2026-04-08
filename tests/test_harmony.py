@@ -7,6 +7,8 @@ from dataclasses import replace
 import pytest
 
 from harmony import (
+    MAX_PROGRESSION_CHORDS,
+    MAX_PROGRESSION_INPUT_CHARS,
     default_weights,
     generate_harmony,
     parse_chord_symbol,
@@ -261,6 +263,18 @@ def test_beam_width_zero_is_exact_dp() -> None:
 
 def test_parse_progression_collapses_empty_slots() -> None:
     assert len(parse_progression("C | | F")) == 2
+
+
+def test_parse_progression_rejects_too_many_chords() -> None:
+    tokens = " ".join(["C"] * (MAX_PROGRESSION_CHORDS + 1))
+    with pytest.raises(ValueError, match="Too many chords"):
+        parse_progression(tokens)
+
+
+def test_parse_progression_rejects_oversized_input() -> None:
+    blob = "x" * (MAX_PROGRESSION_INPUT_CHARS + 1)
+    with pytest.raises(ValueError, match="too long"):
+        parse_progression(blob)
 
 
 def test_parse_weights_from_form_rejects_too_large_performance_knobs() -> None:

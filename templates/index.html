@@ -98,6 +98,23 @@ textarea {
   color: #9ca3af;
   margin-top: 0.25rem;
 }
+.progression-limit-reminder {
+  font-size: 0.8rem;
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  line-height: 1.4;
+}
+.progression-limit-reminder.is-warn {
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+.progression-limit-reminder.is-error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.55);
+}
       .error {
         background: rgba(239, 68, 68, 0.08);
         border: 1px solid rgba(239, 68, 68, 0.7);
@@ -690,7 +707,7 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
   </div>
 {% endif %}
 
-<form method="post" action="{{ url_for('index') }}" id="harmony-form">
+<form method="post" action="{{ url_for('index') }}" id="harmony-form" data-generating-label="Generating…">
   <div class="field-group">
     <label for="voices">Number of voices</label>
     <input type="number" id="voices" name="voices" min="4" max="6" value="{{ voices_display }}">
@@ -699,10 +716,18 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
 
   <div class="field-group">
     <label for="progression">Chord progression</label>
-    <textarea id="progression" name="progression" placeholder="Cmaj | Fmaj | G7 | Cmaj">{{ progression or "" }}</textarea>
+    <textarea
+      id="progression"
+      name="progression"
+      maxlength="{{ max_progression_chars }}"
+      data-max-chords="{{ max_progression_chords }}"
+      data-max-chars="{{ max_progression_chars }}"
+      placeholder="Cmaj | Fmaj | G7 | Cmaj">{{ progression or "" }}</textarea>
     <div class="hint">
       Examples: <code>Cmaj | Fmaj | G7 | Cmaj</code> or <code>Am Dm G C</code>. Use spaces, pipes <code>|</code>, or commas.
+      Limit: up to {{ max_progression_chords }} chords and {{ max_progression_chars }} characters (longer lists are rejected to keep generation responsive).
     </div>
+    <p id="progression-limit-reminder" class="progression-limit-reminder" hidden role="status" aria-live="polite"></p>
   </div>
 
   <details class="weights-section">
@@ -790,6 +815,9 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
 
         <div class="field-group">
           <label>Voices (highest to lowest)</label>
+          {% if whatif_disabled %}
+          <p class="hint" style="margin-bottom: 0.5rem;">What-if alternatives are turned off for this progression (more than {{ whatif_max_chords }} chords) so the page stays responsive. Locks still work.</p>
+          {% endif %}
           <div class="voices-table-scroll result-font-step-up">
           <table class="voices">
         <thead>
@@ -820,6 +848,9 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
                   <input type="checkbox" class="lock-cb" data-chord-index="{{ step }}" data-voicing="{{ chord_voicings_json_list[step] }}" {% if step in locked_chord_indices %}checked{% endif %}>
                   Lock
                 </label>
+                {% if whatif_disabled %}
+                <span class="hint" style="display:block;margin-top:0.35rem;">What if: —</span>
+                {% else %}
                 <details class="whatif-details">
                   <summary>What if</summary>
                   <div class="whatif-panel" role="region" aria-label="Alternative voicings for this step">
@@ -838,6 +869,7 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
                     </ul>
                   </div>
                 </details>
+                {% endif %}
               </td>
             {% endfor %}
           </tr>
@@ -891,6 +923,155 @@ html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
 </form>
 
 <script>
+(function() {
+  var ta = document.getElementById("progression");
+  var el = document.getElementById("progression-limit-reminder");
+  if (!ta || !el) return;
+  var maxChords = parseInt(ta.getAttribute("data-max-chords") || "128", 10);
+  var maxChars = parseInt(ta.getAttribute("data-max-chars") || "65536", 10);
+  if (!Number.isFinite(maxChords) || maxChords < 1) maxChords = 128;
+  if (!Number.isFinite(maxChars) || maxChars < 1) maxChars = 65536;
+  var warnChords = Math.max(1, Math.min(maxChords - 1, Math.floor(maxChords * 0.78)));
+  var debounceMs = 320;
+  var debounceTimer = null;
+  var reminderId = "progression-limit-reminder";
+  var RE_WS = /\s/;
+
+  /** Same token rules as server parse_progression: | and , act like separators; any Unicode whitespace splits tokens. O(length), no giant arrays. */
+  function chordTokenCount(s) {
+    if (!s) return 0;
+    var n = 0;
+    var inTok = false;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (c === "|" || c === ",") {
+        if (inTok) {
+          n++;
+          inTok = false;
+        }
+        continue;
+      }
+      if (RE_WS.test(c)) {
+        if (inTok) {
+          n++;
+          inTok = false;
+        }
+      } else {
+        inTok = true;
+      }
+    }
+    if (inTok) n++;
+    return n;
+  }
+
+  function syncAriaDescribedBy(active) {
+    var raw = (ta.getAttribute("aria-describedby") || "").trim();
+    var ids = raw ? raw.split(/\s+/).filter(Boolean) : [];
+    var idx = ids.indexOf(reminderId);
+    if (active) {
+      if (idx < 0) ids.push(reminderId);
+    } else if (idx >= 0) {
+      ids.splice(idx, 1);
+    }
+    if (ids.length) ta.setAttribute("aria-describedby", ids.join(" "));
+    else ta.removeAttribute("aria-describedby");
+  }
+
+  function updateProgressionLimitReminder() {
+    try {
+      var raw = ta.value || "";
+      var n = chordTokenCount(raw);
+      var L = raw.length;
+      el.hidden = true;
+      el.textContent = "";
+      el.classList.remove("is-warn", "is-error");
+      syncAriaDescribedBy(false);
+      var parts = [];
+      if (n > maxChords) {
+        el.classList.add("is-error");
+        parts.push(
+          "This progression counts as " + n + " chords, but the server accepts at most " + maxChords +
+          ". Generate will fail until you shorten the list (or split it into multiple runs)."
+        );
+      } else if (n >= warnChords) {
+        el.classList.add("is-warn");
+        parts.push(
+          "You are approaching the limit of " + maxChords + " chords (about " + n +
+          " chord tokens here—same rules as spaces, |, commas, and line breaks on the server)."
+        );
+      }
+      if (L >= maxChars) {
+        el.classList.remove("is-warn");
+        el.classList.add("is-error");
+        parts.push(
+          "Text is at the " + maxChars + "-character limit for this field."
+        );
+      } else if (L >= Math.floor(maxChars * 0.92)) {
+        if (!el.classList.contains("is-error")) el.classList.add("is-warn");
+        parts.push(
+          "You are close to the " + maxChars + "-character limit for this field."
+        );
+      }
+      if (!parts.length) return;
+      el.textContent = parts.join(" ");
+      el.hidden = false;
+      syncAriaDescribedBy(true);
+    } catch (err) { /* ignore; do not break the form */ }
+  }
+
+  function flushDebounce() {
+    if (debounceTimer != null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+  }
+
+  function scheduleUpdate() {
+    flushDebounce();
+    debounceTimer = setTimeout(function() {
+      debounceTimer = null;
+      updateProgressionLimitReminder();
+    }, debounceMs);
+  }
+
+  ta.addEventListener("input", scheduleUpdate);
+  ta.addEventListener("change", function() {
+    flushDebounce();
+    updateProgressionLimitReminder();
+  });
+  ta.addEventListener("blur", function() {
+    flushDebounce();
+    updateProgressionLimitReminder();
+  });
+  var progForm = ta.form || document.getElementById("harmony-form");
+  if (progForm) {
+    progForm.addEventListener(
+      "submit",
+      function() {
+        flushDebounce();
+        updateProgressionLimitReminder();
+      },
+      true
+    );
+  }
+  updateProgressionLimitReminder();
+})();
+(function() {
+  var form = document.getElementById("harmony-form");
+  if (form) {
+    form.addEventListener("submit", function() {
+      var btn = form.querySelector("button.primary[type=\"submit\"]");
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      var alt = form.getAttribute("data-generating-label") || "Generating…";
+      if (btn.textContent && btn.textContent.indexOf(alt) === -1) {
+        btn.setAttribute("data-prev-label", btn.textContent);
+        btn.textContent = alt;
+      }
+    });
+  }
+})();
 (function() {
   var modeSel = document.getElementById("midi_mode");
   var patSel = document.getElementById("midi_pattern");

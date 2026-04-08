@@ -146,6 +146,10 @@ _BEAM_WIDTH_BOUNDS = (0, 5_000)
 _MAX_VOICINGS_BOUNDS = (1, 3_000)
 _HARD_CAP_RAW_VOICINGS = 8000
 
+# Progression size limits (CLI + web): avoids multi‑minute runs and huge HTML payloads.
+MAX_PROGRESSION_CHORDS = 128
+MAX_PROGRESSION_INPUT_CHARS = 65536
+
 
 def weights_from_dict(d: Mapping[str, Any]) -> HarmonyWeights:
     """Merge saved dict with defaults and coerce/validate numeric fields."""
@@ -720,6 +724,12 @@ def _effective_chord_tones(chord: Chord, num_voices: int) -> List[int]:
 
 def parse_progression(text: str) -> List[Chord]:
     # Split on common separators; skip empty tokens (e.g. "C | | F" → two chords)
+    if text is None:
+        text = ""
+    if len(text) > MAX_PROGRESSION_INPUT_CHARS:
+        raise ValueError(
+            f"Progression text is too long (maximum {MAX_PROGRESSION_INPUT_CHARS} characters)."
+        )
     tokens: List[str] = []
     for part in text.replace("|", " ").replace(",", " ").split():
         t = part.strip()
@@ -727,6 +737,10 @@ def parse_progression(text: str) -> List[Chord]:
             tokens.append(t)
     if not tokens:
         raise ValueError("No chords found in progression.")
+    if len(tokens) > MAX_PROGRESSION_CHORDS:
+        raise ValueError(
+            f"Too many chords ({len(tokens)}). Maximum is {MAX_PROGRESSION_CHORDS}."
+        )
     return [parse_chord_symbol(tok) for tok in tokens]
 
 
