@@ -1,0 +1,9 @@
+Noto Serif (WOFF2 subsets: Latin, Math / musical symbols)
+
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+
+Licensed under the SIL Open Font License, Version 1.1.
+Full license: https://openfontlicense.org/open-font-license-official-text/
+Source: https://fonts.google.com/noto/specimen/Noto+Serif
+
+Files in this folder were downloaded from fonts.gstatic.com for self-hosted use.

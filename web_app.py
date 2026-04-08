@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import asdict
 from flask import Flask, flash, request, redirect, url_for, render_template, send_file, session
@@ -15,6 +16,7 @@ from harmony import (
     default_weights,
     parse_weights_from_form,
     weights_form_snapshot,
+    weights_from_dict,
     get_chord_alternatives,
     midi_to_name,
     progressions_equivalent_for_ui,
@@ -89,6 +91,25 @@ def _midi_to_name_filter(midi_num):
     return midi_to_name(int(midi_num)) if midi_num is not None else ""
 
 
+def _display_music_accidentals(s: str) -> str:
+    """
+    UI-only: ASCII # / b → Unicode ♯ / ♭ for chord and note display.
+    Does not affect parsing or stored data. Suffix flats only after A–G to avoid
+    touching English words (e.g. 'ab').
+    """
+    if s is None:
+        return ""
+    t = str(s).replace("#", "\u266f")
+    t = re.sub(r"(?<=[A-G])b", "\u266d", t)
+    t = re.sub(r"^b(?=[A-G])", "\u266d", t)
+    return t
+
+
+@app.template_filter("display_music")
+def _display_music_filter(s):
+    return _display_music_accidentals(s)
+
+
 def _weights_to_form(w) -> dict:
     """Convert HarmonyWeights to dict of string values for form pre-fill."""
     return {
@@ -111,6 +132,11 @@ def _weights_to_form(w) -> dict:
         "range_low": str(w.range_low) if w.range_low is not None else "",
         "range_high": str(w.range_high) if w.range_high is not None else "",
         "max_spread": str(w.max_spread),
+        "bonus_leading_tone": str(w.bonus_leading_tone),
+        "bonus_seventh_resolve": str(w.bonus_seventh_resolve),
+        "cost_slash_bass_mismatch": str(w.cost_slash_bass_mismatch),
+        "max_voicings_per_chord": str(w.max_voicings_per_chord),
+        "beam_width": str(w.beam_width),
     }
 
 
@@ -313,7 +339,7 @@ def _normalize_locked_form(raw_lv) -> dict[str, list[int]]:
 def _sticky_display_parts(raw: dict, source: str) -> dict | None:
     """Rebuild harmony UI data from a sticky payload; None if invalid."""
     try:
-        w = HarmonyWeights(**raw["weights"])
+        w = weights_from_dict(raw["weights"])
         prog = raw["progression"]
         chords = parse_progression(prog)
         result = HarmonyResult(chords=chords, voices=raw["voices_midi"])
@@ -699,6 +725,7 @@ def index():
     pitch_min, pitch_max = _piano_roll_bounds(result) if result else (48, 72)
     result_num_voices = len(result.voices) if result else 0
     piano_roll_num_pitches = (pitch_max - pitch_min + 1) if result else 25
+    weights_defaults_form = _weights_to_form(default_weights())
 
     return render_template(
         "index.html",
@@ -719,6 +746,7 @@ def index():
         progression=progression_text,
         midi_available=midi_available,
         weights_form=weights_form,
+        weights_defaults=weights_defaults_form,
         chord_voicings=chord_voicings,
         chord_voicings_json_list=chord_voicings_json_list,
         alternatives_per_chord=alternatives_per_chord,

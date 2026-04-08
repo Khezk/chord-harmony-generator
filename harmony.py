@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, List, Tuple, Sequence, Dict, Optional, Mapping
 
 # Chord-tone roles for omission priority (when voices < chord tones).
@@ -18,6 +18,8 @@ PITCH_CLASS_MAP: Dict[str, int] = {
     "D#": 3,
     "Eb": 3,
     "E": 4,
+    "Fb": 4,
+    "E#": 5,
     "F": 5,
     "F#": 6,
     "Gb": 6,
@@ -28,6 +30,8 @@ PITCH_CLASS_MAP: Dict[str, int] = {
     "A#": 10,
     "Bb": 10,
     "B": 11,
+    "Cb": 11,
+    "B#": 0,
 }
 
 
@@ -69,6 +73,15 @@ class HarmonyWeights:
     range_low: Optional[int] = None   # if set, override default low bound (MIDI)
     range_high: Optional[int] = None  # if set, override default high bound (MIDI)
     max_spread: int = 31              # max semitones between lowest and highest note in a chord
+    # Tendency tones (subtracted from transition cost when conditions match)
+    bonus_leading_tone: float = 0.35      # leading tone → tonic (into curr chord's root)
+    bonus_seventh_resolve: float = 0.35   # chordal 7th moves down by step onto a curr chord tone
+    # Slash chords: penalty when lowest voice is not the requested bass (e.g. locked voicings)
+    cost_slash_bass_mismatch: float = 8.0
+    # Performance: cap voicing count after sorting by internal cost (lower = kept first)
+    max_voicings_per_chord: int = 400
+    # DP beam: keep this many best states per step; 0 = no beam (exact DP, slower)
+    beam_width: int = 128
 
 
 def default_weights() -> HarmonyWeights:
@@ -96,6 +109,11 @@ WEIGHT_FORM_KEYS: Tuple[str, ...] = (
     "range_low",
     "range_high",
     "max_spread",
+    "bonus_leading_tone",
+    "bonus_seventh_resolve",
+    "cost_slash_bass_mismatch",
+    "max_voicings_per_chord",
+    "beam_width",
 )
 
 # Broad limits: large |cost| allowed for experimentation; MIDI 0–127; wide spread.
@@ -119,7 +137,99 @@ _WEIGHT_FLOAT_FIELDS: Tuple[Tuple[str, str], ...] = (
     ("cost_wide_gap_per", "Wide gap (per semitone)"),
     ("cost_span_tight", "Chord span tight cost"),
     ("cost_span_wide", "Chord span wide cost"),
+    ("bonus_leading_tone", "Leading tone resolution bonus"),
+    ("bonus_seventh_resolve", "Seventh resolution bonus"),
+    ("cost_slash_bass_mismatch", "Slash bass mismatch"),
 )
+
+_BEAM_WIDTH_BOUNDS = (0, 5_000)
+_MAX_VOICINGS_BOUNDS = (1, 3_000)
+_HARD_CAP_RAW_VOICINGS = 8000
+
+
+def weights_from_dict(d: Mapping[str, Any]) -> HarmonyWeights:
+    """Merge saved dict with defaults and coerce/validate numeric fields."""
+    if not isinstance(d, Mapping):
+        return default_weights()
+    merged = asdict(default_weights())
+
+    float_fields = {
+        "cost_static",
+        "cost_stepwise",
+        "cost_medium_step",
+        "cost_large_leap_base",
+        "cost_large_leap_per",
+        "cost_parallel_5_8",
+        "cost_direct_5_8",
+        "cost_voice_crossing",
+        "bonus_contrary",
+        "cost_wide_gap_base",
+        "cost_wide_gap_per",
+        "cost_span_tight",
+        "cost_span_wide",
+        "bonus_leading_tone",
+        "bonus_seventh_resolve",
+        "cost_slash_bass_mismatch",
+    }
+    int_fields = {
+        "spacing_octave": _SPACING_OCTAVE_BOUNDS,
+        "span_tight_threshold": _SPAN_THRESHOLD_BOUNDS,
+        "span_wide_threshold": _SPAN_THRESHOLD_BOUNDS,
+        "max_spread": _MAX_SPREAD_BOUNDS,
+        "max_voicings_per_chord": _MAX_VOICINGS_BOUNDS,
+        "beam_width": _BEAM_WIDTH_BOUNDS,
+    }
+
+    for k, default_val in merged.items():
+        if k not in d:
+            continue
+        raw = d[k]
+        if raw is None:
+            continue
+        if k in ("range_low", "range_high"):
+            # Optional MIDI bounds; bad values fall back to default (None).
+            try:
+                iv = int(float(raw))
+            except (TypeError, ValueError):
+                continue
+            lo, hi = _MIDI_NOTE_BOUNDS
+            if lo <= iv <= hi:
+                merged[k] = iv
+            continue
+        if k in float_fields:
+            try:
+                xv = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(xv) and abs(xv) <= _WEIGHT_FLOAT_ABS_MAX:
+                merged[k] = xv
+            continue
+        if k in int_fields:
+            try:
+                xf = float(raw)
+            except (TypeError, ValueError):
+                continue
+            iv = int(xf)
+            if abs(xf - iv) > 1e-9:
+                continue
+            lo, hi = int_fields[k]
+            if lo <= iv <= hi:
+                merged[k] = iv
+            continue
+        # Unknown or non-numeric keys: keep defaults for safety.
+
+    # Cross-field sanity checks (same invariants as form parsing).
+    dflt = default_weights()
+    if merged["span_tight_threshold"] >= merged["span_wide_threshold"]:
+        merged["span_tight_threshold"] = dflt.span_tight_threshold
+        merged["span_wide_threshold"] = dflt.span_wide_threshold
+    rl = merged.get("range_low")
+    rh = merged.get("range_high")
+    if rl is not None and rh is not None and rl > rh:
+        merged["range_low"] = dflt.range_low
+        merged["range_high"] = dflt.range_high
+
+    return HarmonyWeights(**merged)
 
 
 def weights_form_snapshot(form: Mapping[str, str]) -> Dict[str, str]:
@@ -243,6 +353,25 @@ def parse_weights_from_form(form: Mapping[str, str]) -> Tuple[Optional[HarmonyWe
     if errors:
         return None, errors
 
+    beam_width = parse_int_field(
+        "beam_width",
+        "Beam width (0 = exact DP, no pruning)",
+        d.beam_width,
+        *_BEAM_WIDTH_BOUNDS,
+    )
+    max_voicings_per_chord = parse_int_field(
+        "max_voicings_per_chord",
+        "Max voicings per chord",
+        d.max_voicings_per_chord,
+        *_MAX_VOICINGS_BOUNDS,
+    )
+
+    if errors:
+        return None, errors
+
+    assert beam_width is not None
+    assert max_voicings_per_chord is not None
+
     w = HarmonyWeights(
         cost_static=float_vals["cost_static"],
         cost_stepwise=float_vals["cost_stepwise"],
@@ -263,6 +392,11 @@ def parse_weights_from_form(form: Mapping[str, str]) -> Tuple[Optional[HarmonyWe
         range_low=range_low,
         range_high=range_high,
         max_spread=max_spread,
+        bonus_leading_tone=float_vals["bonus_leading_tone"],
+        bonus_seventh_resolve=float_vals["bonus_seventh_resolve"],
+        cost_slash_bass_mismatch=float_vals["cost_slash_bass_mismatch"],
+        max_voicings_per_chord=max_voicings_per_chord,
+        beam_width=beam_width,
     )
     return w, []
 
@@ -302,19 +436,121 @@ def midi_to_name(m: int) -> str:
     return f"{names[pc]}{octave}"
 
 
+def _normalize_unicode_accidentals(s: str) -> str:
+    """Map Unicode music sharp/flat to ASCII so ♯F and #F parse the same."""
+    return s.replace("\u266f", "#").replace("\u266d", "b")
+
+
+def _looks_like_slash_bass_note(s: str) -> bool:
+    """True if the string after '/' looks like a pitch (E, Eb, F#, #F, bC), not e.g. '9' in F6/9."""
+    t = s.strip()
+    if not t:
+        return False
+    if t[0].upper() in "ABCDEFG":
+        return True
+    if t[0] in "#b" and len(t) > 1 and t[1].upper() in "ABCDEFG":
+        return True
+    return False
+
+
+def _parse_root_token(s: str) -> Tuple[str, str]:
+    """
+    Parse a pitch-class root at the start of s and return (PITCH_CLASS_MAP key, remainder).
+
+    Supports:
+    - Suffix accidentals: F#, Cb, Eb (unchanged).
+    - Leading sharp: #F, #C → same as F#, C#.
+    - Leading flat: bC, bD → same as Cb, Db (second char must be A–G so 'bm' stays B minor).
+    """
+    if not s:
+        raise ValueError("Empty root token")
+
+    # Leading # before letter (e.g. #Fmaj → F#)
+    if s[0] == "#" and len(s) > 1 and s[1].upper() in "ABCDEFG":
+        letter = s[1].upper()
+        key = letter + "#"
+        if key not in PITCH_CLASS_MAP:
+            raise ValueError(f"Unknown root: {key}")
+        return key, s[2:]
+
+    # Leading b before letter (e.g. bC → Cb). Second char must be A–G so "bm" is still B minor.
+    if s[0] == "b" and len(s) > 1 and s[1].upper() in "ABCDEFG":
+        letter = s[1].upper()
+        key = letter + "b"
+        if key not in PITCH_CLASS_MAP:
+            raise ValueError(f"Unknown root: {key}")
+        return key, s[2:]
+
+    # Letter first, optional suffix b or # (e.g. F#, Cb, B, bm → B + m)
+    root = s[0].upper()
+    rest = s[1:]
+    if rest and rest[0] in ("b", "#"):
+        root += rest[0]
+        rest = rest[1:]
+
+    if root not in PITCH_CLASS_MAP:
+        raise ValueError(f"Unknown root: {root}")
+
+    return root, rest
+
+
+def _canonicalize_chord_symbol_spelling(s: str) -> str:
+    """
+    Rewrite roots to conventional suffix accidentals (F# not #F, Bb not bB, Cb not bC).
+    Input must already be ASCII-normalized (#/b). Used for stored/displayed Chord.symbol.
+    """
+    if not s:
+        return s
+    if "/" in s:
+        main, bass = s.split("/", 1)
+        tentative_bass = bass.strip()
+        if tentative_bass and _looks_like_slash_bass_note(tentative_bass):
+            s_main = main.strip()
+            s_bass = tentative_bass
+        else:
+            s_main = s
+            s_bass = ""
+    else:
+        s_main = s
+        s_bass = ""
+
+    try:
+        root_key, rest = _parse_root_token(s_main.strip())
+    except ValueError:
+        return s
+    out_main = root_key + rest
+
+    if s_bass:
+        try:
+            bass_key, bass_rest = _parse_root_token(s_bass.strip())
+        except ValueError:
+            return s
+        if bass_rest.strip():
+            return s
+        return out_main + "/" + bass_key
+    return out_main
+
+
 def parse_chord_symbol(symbol: str) -> Chord:
-    s = symbol.strip()
+    """
+    Parse a chord symbol into pitch classes.
+
+    The returned ``Chord.symbol`` uses conventional suffix accidentals (e.g. ``F#``,
+    ``Bb``): leading ``#``/``b`` forms (``#F``, ``bB``) are rewritten for display.
+    Unicode ``♯``/``♭`` are normalized to ASCII before canonicalization.
+    """
+    s = _normalize_unicode_accidentals(symbol.strip())
     if not s:
         raise ValueError("Empty chord symbol")
 
-    # Handle inversions / slash chords, e.g. C/E, Am/G.
+    # Handle inversions / slash chords, e.g. C/E, Am/G, C/#F, D/bC.
     # Important: patterns like "F6/9" are NOT slash chords; "/9" is part of the quality,
-    # so only treat "/" as a bass separator when the part after "/" starts with a pitch letter.
+    # so only treat "/" as a bass separator when the part after "/" looks like a pitch.
     bass_pc: Optional[int] = None
     if "/" in s:
         main, bass = s.split("/", 1)
         tentative_bass = bass.strip()
-        if tentative_bass and tentative_bass[0].upper() in "ABCDEFG":
+        if tentative_bass and _looks_like_slash_bass_note(tentative_bass):
             s_main = main.strip()
             s_bass = tentative_bass
         else:
@@ -327,35 +563,29 @@ def parse_chord_symbol(symbol: str) -> Chord:
 
     # Parse bass, if given
     if s_bass:
-        # Bass can be like E, Eb, F#
-        bass_root = s_bass[0].upper()
-        bass_rest = s_bass[1:]
-        if bass_rest and bass_rest[0] in ("b", "#"):
-            # Keep accidental case as in map keys (e.g. "Ab", "Db")
-            bass_root += bass_rest[0]
-        if bass_root not in PITCH_CLASS_MAP:
+        try:
+            bass_key, bass_rest = _parse_root_token(s_bass.strip())
+        except ValueError as exc:
+            raise ValueError(f"Unknown bass in chord symbol: {symbol}") from exc
+        if bass_rest.strip():
             raise ValueError(f"Unknown bass in chord symbol: {symbol}")
-        bass_pc = PITCH_CLASS_MAP[bass_root]
+        bass_pc = PITCH_CLASS_MAP[bass_key]
 
-    # Root (with possible accidental)
-    root = s_main[0].upper()
-    rest = s_main[1:]
-    if rest and rest[0] in ("b", "#"):
-        # Keep accidental case as in map keys (e.g. "Ab", "Db")
-        root += rest[0]
-        rest = rest[1:]
+    # Root (with possible accidental; #F and bC forms supported)
+    try:
+        root_key, rest = _parse_root_token(s_main.strip())
+    except ValueError as exc:
+        raise ValueError(f"Unknown root in chord symbol: {symbol}") from exc
 
-    if root not in PITCH_CLASS_MAP:
-        raise ValueError(f"Unknown root in chord symbol: {symbol}")
-
-    pc = PITCH_CLASS_MAP[root]
+    pc = PITCH_CLASS_MAP[root_key]
     quality = rest
 
     structure = _build_chord_structure(pc, quality)
     pcs = sorted(set(pc for pc, _ in structure))
     roles = tuple(structure) if structure else None
 
-    return Chord(symbol=symbol, pitches=pcs, root_pc=pc, bass_pc=bass_pc, tone_roles=roles)
+    display_symbol = _canonicalize_chord_symbol_spelling(s)
+    return Chord(symbol=display_symbol, pitches=pcs, root_pc=pc, bass_pc=bass_pc, tone_roles=roles)
 
 
 def _build_chord_structure(root_pc: int, quality: str) -> List[Tuple[int, int]]:
@@ -365,6 +595,17 @@ def _build_chord_structure(root_pc: int, quality: str) -> List[Tuple[int, int]]:
     """
     q = quality.strip()
     q_lower = q.lower()
+
+    def is_minor_quality_prefix(s: str) -> bool:
+        """True for minor-leading qualities like m, min, mi, -, but not major/maj."""
+        if not s:
+            return False
+        if s.startswith("-"):
+            return True
+        if s.startswith("min") or s.startswith("mi"):
+            return True
+        # 'm' as minor only when not followed by 'a' (to avoid maj...)
+        return s.startswith("m") and (len(s) == 1 or s[1] != "a")
 
     def pc_of(semitones: int) -> int:
         return (root_pc + semitones) % 12
@@ -391,11 +632,11 @@ def _build_chord_structure(root_pc: int, quality: str) -> List[Tuple[int, int]]:
         out = [(pc_of(0), ROOT), (pc_of(3), THIRD), (pc_of(6), FIFTH)]
     # Minor–major 7th chords (e.g. CmM7, CminMaj7): minor triad, major 7th added below.
     # Use q (original) so "M7" (major 7th) is not misread as minor when lowercased to "m7".
-    elif q.startswith(("m", "min", "mi", "-")) and (
+    elif is_minor_quality_prefix(q_lower) and (
         "maj7" in q_lower or "M7" in q
     ):
         out = [(pc_of(0), ROOT), (pc_of(3), THIRD), (pc_of(fifth), FIFTH)]
-    elif q_lower.startswith(("m", "min", "mi", "-")) and "maj" not in q_lower and "M7" not in q:
+    elif is_minor_quality_prefix(q_lower) and "maj" not in q_lower and "M7" not in q:
         out = [(pc_of(0), ROOT), (pc_of(3), THIRD), (pc_of(fifth), FIFTH)]
     elif q_lower.startswith(("aug", "+")):
         out = [(pc_of(0), ROOT), (pc_of(4), THIRD), (pc_of(8), FIFTH)]
@@ -478,10 +719,12 @@ def _effective_chord_tones(chord: Chord, num_voices: int) -> List[int]:
 
 
 def parse_progression(text: str) -> List[Chord]:
-    # Split on common separators
+    # Split on common separators; skip empty tokens (e.g. "C | | F" → two chords)
     tokens: List[str] = []
     for part in text.replace("|", " ").replace(",", " ").split():
-        tokens.append(part)
+        t = part.strip()
+        if t:
+            tokens.append(t)
     if not tokens:
         raise ValueError("No chords found in progression.")
     return [parse_chord_symbol(tok) for tok in tokens]
@@ -541,6 +784,121 @@ def progressions_equivalent_for_ui(a: str, b: str) -> bool:
     return progressions_harmonically_equal(a, b)
 
 
+def _chordal_seventh_pc(chord: Chord) -> Optional[int]:
+    """Pitch class of the chordal 7th if the chord has a 7th, else None."""
+    m7 = (chord.root_pc + 10) % 12
+    M7 = (chord.root_pc + 11) % 12
+    has_m = m7 in chord.pitches
+    has_M = M7 in chord.pitches
+    if not has_m and not has_M:
+        return None
+    if has_m and not has_M:
+        return m7
+    if has_M and not has_m:
+        return M7
+    if chord.tone_roles:
+        for pc, role in chord.tone_roles:
+            if role == SEVENTH:
+                return pc
+    return m7
+
+
+def _slash_bass_mismatch_cost(
+    voicing: Tuple[int, ...],
+    chord: Optional[Chord],
+    w: HarmonyWeights,
+) -> float:
+    if chord is None or chord.bass_pc is None or not voicing:
+        return 0.0
+    if (voicing[0] % 12) == chord.bass_pc:
+        return 0.0
+    return w.cost_slash_bass_mismatch
+
+
+def tendency_tone_adjustment(
+    prev: Tuple[int, ...],
+    curr: Tuple[int, ...],
+    prev_chord: Chord,
+    curr_chord: Chord,
+    w: HarmonyWeights,
+) -> float:
+    """
+    Negative values reduce transition cost when tendency rules match.
+    Leading tone (of curr chord's key center = curr root) resolves up to the root;
+    chordal 7th in prev_chord resolves down by step onto a pitch class in curr_chord.
+    """
+    adj = 0.0
+    n = len(prev)
+    if len(curr) != n:
+        return 0.0
+
+    tonic_pc = curr_chord.root_pc
+    lt_pc = (tonic_pc - 1) % 12
+    if w.bonus_leading_tone:
+        for k in range(n):
+            if (prev[k] % 12) != lt_pc:
+                continue
+            if (curr[k] % 12) != tonic_pc:
+                continue
+            step = curr[k] - prev[k]
+            if 1 <= step <= 2:
+                adj -= w.bonus_leading_tone
+
+    seventh_pc = _chordal_seventh_pc(prev_chord)
+    if seventh_pc is not None and w.bonus_seventh_resolve:
+        target_pcs = set(curr_chord.pitches)
+        for k in range(n):
+            if (prev[k] % 12) != seventh_pc:
+                continue
+            step = curr[k] - prev[k]
+            if step not in (-1, -2):
+                continue
+            if (curr[k] % 12) not in target_pcs:
+                continue
+            adj -= w.bonus_seventh_resolve
+    return adj
+
+
+def transition_cost(
+    prev_v: Optional[Tuple[int, ...]],
+    curr_v: Tuple[int, ...],
+    prev_ch: Optional[Chord],
+    curr_ch: Chord,
+    w: HarmonyWeights,
+    same_chord: bool,
+) -> float:
+    c = voice_leading_cost(
+        prev_v, curr_v, w, same_chord=same_chord, curr_chord=curr_ch,
+    )
+    if prev_v is not None and prev_ch is not None:
+        c += tendency_tone_adjustment(prev_v, curr_v, prev_ch, curr_ch, w)
+    return c
+
+
+def _beam_prune_states(
+    states: Dict[int, Tuple[float, Optional[int]]],
+    beam_width: int,
+) -> Dict[int, Tuple[float, Optional[int]]]:
+    if beam_width <= 0 or len(states) <= beam_width:
+        return states
+    items = sorted(states.items(), key=lambda kv: kv[1][0])[:beam_width]
+    return dict(items)
+
+
+def _prune_voicing_candidates(
+    candidates: List[Tuple[int, ...]],
+    chord: Chord,
+    w: HarmonyWeights,
+) -> List[Tuple[int, ...]]:
+    if len(candidates) <= w.max_voicings_per_chord:
+        return candidates
+    scored = sorted(
+        candidates,
+        key=lambda v: chord_internal_cost(v, w) + _slash_bass_mismatch_cost(v, chord, w),
+    )
+    return scored[: w.max_voicings_per_chord]
+
+
 def generate_harmony(
     progression: Sequence[Chord],
     num_voices: int = 4,
@@ -552,6 +910,8 @@ def generate_harmony(
     locked_voicings: optional dict chord_index -> voicing (list/tuple of MIDI, lowest to highest).
     Locked chords use that single voicing; others are optimized.
     """
+    if not progression:
+        raise ValueError("Progression must contain at least one chord.")
     if num_voices < 4:
         raise ValueError("At least 4 voices are required.")
     if num_voices > 6:
@@ -571,11 +931,18 @@ def generate_harmony(
                 raise ValueError(
                     f"Locked voicing for chord {i + 1} has {len(raw)} notes; expected {num_voices}."
                 )
+            if any((not isinstance(n, int)) for n in raw):
+                raise ValueError(f"Locked voicing for chord {i + 1} must contain MIDI integers.")
+            if any((n < low or n > high) for n in raw):
+                raise ValueError(
+                    f"Locked voicing for chord {i + 1} must stay within active range {low}..{high}."
+                )
             candidates_per_step.append([tuple(sorted(raw))])
             continue
         candidates = generate_voicings_for_chord(
             chord, num_voices, low, high, base_octave, max_spread=w.max_spread
         )
+        candidates = _prune_voicing_candidates(candidates, chord, w)
         if not candidates:
             raise RuntimeError(f"No voicings generated for chord {chord.symbol}")
         candidates_per_step.append(candidates)
@@ -586,10 +953,12 @@ def generate_harmony(
 
     first_step: Dict[int, Tuple[float, Optional[int]]] = {}
     for i, voicing in enumerate(candidates_per_step[0]):
-        cost = voice_leading_cost(None, voicing, w, curr_chord=first_chord)
+        cost = transition_cost(
+            None, voicing, None, first_chord, w, same_chord=False,
+        )
         cost += _bass_root_preference_cost(voicing, first_chord)
         first_step[i] = (cost, None)
-    paths.append(first_step)
+    paths.append(_beam_prune_states(first_step, w.beam_width))
 
     for step in range(1, len(progression)):
         prev_states = paths[-1]
@@ -601,9 +970,13 @@ def generate_harmony(
             best_prev: Optional[int] = None
             for j, (prev_cost, _) in prev_states.items():
                 prev_voicing = candidates_per_step[step - 1][j]
-                c = prev_cost + voice_leading_cost(
-                    prev_voicing, curr_voicing, w, same_chord=same_as_prev,
-                    curr_chord=progression[step],
+                c = prev_cost + transition_cost(
+                    prev_voicing,
+                    curr_voicing,
+                    progression[step - 1],
+                    progression[step],
+                    w,
+                    same_chord=same_as_prev,
                 )
                 if is_last:
                     c += _bass_root_preference_cost(curr_voicing, last_chord)
@@ -611,7 +984,7 @@ def generate_harmony(
                     best_cost = c
                     best_prev = j
             curr_states[i] = (best_cost, best_prev)
-        paths.append(curr_states)
+        paths.append(_beam_prune_states(curr_states, w.beam_width))
 
     # Backtrack best path
     final_states = paths[-1]
@@ -675,15 +1048,23 @@ def get_chord_alternatives(
     candidates = generate_voicings_for_chord(
         chord, num_voices, low, high, base_octave=4, max_spread=w.max_spread
     )
+    candidates = _prune_voicing_candidates(candidates, chord, w)
+    prev_ch = progression[chord_index - 1] if chord_index > 0 else None
     is_first = chord_index == 0
     is_last = chord_index == len(progression) - 1
     scored: List[Tuple[Tuple[int, ...], float]] = []
     for c in candidates:
-        cost = voice_leading_cost(prev, c, w, same_chord=same_as_prev, curr_chord=chord)
+        cost = transition_cost(
+            prev, c, prev_ch, chord, w, same_chord=same_as_prev,
+        )
         if next_v is not None:
-            cost += voice_leading_cost(
-                c, next_v, w, same_chord=same_as_next,
-                curr_chord=progression[chord_index + 1],
+            cost += transition_cost(
+                c,
+                next_v,
+                chord,
+                progression[chord_index + 1],
+                w,
+                same_chord=same_as_next,
             )
         if is_first or is_last:
             cost += _bass_root_preference_cost(c, chord)
@@ -742,8 +1123,6 @@ def generate_voicings_for_chord(
         if len(current) == num_voices:
             if current[-1] - current[0] <= max_spread:
                 if all(pc in used_pcs for pc in effective_pcs):
-                    if bass_pc is not None and (current[0] % 12) != bass_pc:
-                        return
                     voicings.append(tuple(current))
             return
 
@@ -766,9 +1145,11 @@ def generate_voicings_for_chord(
 
     backtrack([], 0, set(), {})
 
-    # Limit number of voicings for performance
-    if len(voicings) > 500:
-        voicings = voicings[:500]
+    if len(voicings) > _HARD_CAP_RAW_VOICINGS:
+        voicings = sorted(
+            voicings,
+            key=lambda v: chord_internal_cost(v, default_weights()),
+        )[:_HARD_CAP_RAW_VOICINGS]
 
     return voicings
 
@@ -806,8 +1187,11 @@ def _voicings_slash_bass_outside(
         for u in upper_candidates:
             if u[0] - bass_note <= max_spread:
                 voicings.append((bass_note,) + u)
-    if len(voicings) > 500:
-        voicings = voicings[:500]
+    if len(voicings) > _HARD_CAP_RAW_VOICINGS:
+        voicings = sorted(
+            voicings,
+            key=lambda v: chord_internal_cost(v, default_weights()),
+        )[:_HARD_CAP_RAW_VOICINGS]
     return voicings
 
 
@@ -888,6 +1272,7 @@ def voice_leading_cost(
         major_7th_pc = (curr_chord.root_pc + 11) % 12
         if major_7th_pc in curr_chord.pitches and (curr[0] % 12) == major_7th_pc:
             cost += 6.0
+    cost += _slash_bass_mismatch_cost(curr, curr_chord, w)
     # Penalty for doubling the 3rd in triads (major or minor)
     if curr_chord is not None:
         cost += _doubling_third_cost(curr, curr_chord)

@@ -3,9 +3,45 @@
   <head>
     <meta charset="utf-8">
     <title>Chord Harmony Generator</title>
+    <script>
+      document.documentElement.classList.add("js-whatif");
+    </script>
     <style>
+/* Noto Serif: broad Unicode + dedicated math block (U+266D–U+266F ♭♮♯) for readable accidentals */
+@font-face {
+  font-family: "Noto Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("{{ url_for('static', filename='fonts/noto-serif-latin.woff2') }}") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Noto Serif";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("{{ url_for('static', filename='fonts/noto-serif-latin.woff2') }}") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Noto Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("{{ url_for('static', filename='fonts/noto-serif-math.woff2') }}") format("woff2");
+  unicode-range: U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;
+}
+@font-face {
+  font-family: "Noto Serif";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("{{ url_for('static', filename='fonts/noto-serif-math.woff2') }}") format("woff2");
+  unicode-range: U+0302-0303, U+0305, U+0307-0308, U+0310, U+0312, U+0315, U+031A, U+0326-0327, U+032C, U+032F-0330, U+0332-0333, U+0338, U+033A, U+0346, U+034D, U+0391-03A1, U+03A3-03A9, U+03B1-03C9, U+03D1, U+03D5-03D6, U+03F0-03F1, U+03F4-03F5, U+2016-2017, U+2034-2038, U+203C, U+2040, U+2043, U+2047, U+2050, U+2057, U+205F, U+2070-2071, U+2074-208E, U+2090-209C, U+20D0-20DC, U+20E1, U+20E5-20EF, U+2100-2112, U+2114-2115, U+2117-2121, U+2123-214F, U+2190, U+2192, U+2194-21AE, U+21B0-21E5, U+21F1-21F2, U+21F4-2211, U+2213-2214, U+2216-22FF, U+2308-230B, U+2310, U+2319, U+231C-2321, U+2336-237A, U+237C, U+2395, U+239B-23B7, U+23D0, U+23DC-23E1, U+2474-2475, U+25AF, U+25B3, U+25B7, U+25BD, U+25C1, U+25CA, U+25CC, U+25FB, U+266D-266F, U+27C0-27FF, U+2900-2AFF, U+2B0E-2B11, U+2B30-2B4C, U+2BFE, U+3030, U+FF5B, U+FF5D, U+1D400-1D7FF, U+1EE00-1EEFF;
+}
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Noto Serif", Georgia, "Times New Roman", serif;
   margin: 0;
   padding: 0;
   background: #0f172a;
@@ -128,8 +164,16 @@ button.primary:hover {
 }
 .results-scroll {
   max-width: 100%;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+.voices-table-scroll {
+  max-width: 100%;
   overflow-x: auto;
-  overflow-y: visible;
+  /* overflow-x not visible forces overflow-y to auto in CSS; hidden avoids a brief vertical scrollbar when the
+     what-if panel was absolutely positioned for one frame before JS pins it fixed. */
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   margin: 0 -0.25rem;
   padding: 0 0.25rem;
@@ -138,7 +182,7 @@ button.primary:hover {
   min-width: min-content;
 }
 .chords {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: "Noto Serif", Georgia, "Times New Roman", serif;
   background: #020617;
   padding: 0.6rem 0.75rem;
   border-radius: 0.5rem;
@@ -162,6 +206,31 @@ table.voices th, table.voices td {
 table.voices th {
   background: #020617;
   font-weight: 600;
+}
+table.voices th.voices-th-step {
+  white-space: normal;
+  vertical-align: bottom;
+  text-align: center;
+  max-width: 7.5rem;
+  padding-bottom: 0.35rem;
+}
+table.voices th.voices-th-corner {
+  vertical-align: bottom;
+  text-align: left;
+  padding-bottom: 0.35rem;
+}
+.voices-step-line1 {
+  display: block;
+  font-weight: 600;
+}
+.voices-step-line2 {
+  display: block;
+  margin-top: 0.2rem;
+  font-weight: 500;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.25;
+  word-break: break-word;
 }
 table.voices tr:nth-child(even) td {
   background: rgba(15, 23, 42, 0.85);
@@ -190,6 +259,59 @@ table.voices tr:nth-child(even) td {
 }
 .download a:hover {
   text-decoration: underline;
+}
+/* Slightly larger type in Voices table, Piano roll, and download (not the section labels) */
+.result-font-step-up {
+  --fs: 1.125;
+}
+.result-font-step-up table.voices {
+  font-size: calc(0.85rem * var(--fs));
+}
+.result-font-step-up .voices-step-line2 {
+  font-size: calc(0.72rem * var(--fs));
+}
+/* Lock / What if row: keep original (pre–step-up) sizes */
+.result-font-step-up .lock-whatif-row td {
+  font-size: 0.8rem;
+}
+.result-font-step-up .whatif-item {
+  font-size: 0.75rem;
+}
+.result-font-step-up .whatif-use-btn {
+  font-size: 0.7rem;
+}
+.result-font-step-up .whatif-current-badge {
+  font-size: 0.7rem;
+}
+.result-font-step-up .piano-roll {
+  font-size: calc(0.75rem * var(--fs));
+}
+.result-font-step-up .pr-step-label {
+  font-size: calc(0.7rem * var(--fs));
+}
+.result-font-step-up .pr-chord-name {
+  font-size: calc(0.62rem * var(--fs));
+}
+.result-font-step-up .pr-y-block {
+  min-height: calc(16px * var(--fs));
+  height: calc(18px * var(--fs));
+}
+.result-font-step-up .pr-note {
+  min-height: calc(16px * var(--fs));
+  height: calc(18px * var(--fs));
+  font-size: calc(0.7rem * var(--fs));
+}
+.result-font-step-up .pr-cell {
+  min-height: calc(16px * var(--fs));
+}
+.result-font-step-up.download a {
+  font-size: calc(0.9rem * var(--fs));
+}
+.result-font-step-up.download .hint {
+  font-size: calc(0.8rem * var(--fs));
+}
+.result-font-step-up.download .notice-warn {
+  font-size: calc(0.85rem * var(--fs));
 }
 .midi-advanced {
   margin-top: 0.75rem;
@@ -245,21 +367,39 @@ table.voices tr:nth-child(even) td {
 .pr-y-header {
   grid-column: 1;
   display: flex;
-  align-items: center;
-  padding: 0 0.5rem;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.2rem 0.5rem 0.35rem;
   color: #94a3b8;
   font-weight: 600;
   background: #0f172a;
   border-radius: 0.25rem 0 0 0;
+  text-align: center;
 }
 .pr-step-label {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 0.12rem;
+  padding: 0.2rem 0.15rem 0.35rem;
   color: #64748b;
   font-size: 0.7rem;
   font-weight: 600;
   background: #0f172a;
+  text-align: center;
+  min-width: 0;
+}
+.pr-step-num {
+  line-height: 1.1;
+}
+.pr-chord-name {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1.15;
+  word-break: break-word;
+  max-width: 100%;
 }
 .pr-y-block {
   grid-column: 1;
@@ -340,10 +480,55 @@ table.voices tr:nth-child(even) td {
   margin-bottom: 0.2rem;
   line-height: 1.25;
 }
-.weight-item input {
-  width: 100%;
+.weight-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.weight-input-row input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
   padding: 0.4rem 0.5rem;
   font-size: 0.9rem;
+}
+.weight-revert-btn {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  background: linear-gradient(145deg, rgba(56, 189, 248, 0.28), rgba(99, 102, 241, 0.22));
+  color: #e0f2fe;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease, border-color 0.12s ease;
+}
+.weight-revert-btn:hover:not(:disabled) {
+  transform: scale(1.06);
+  border-color: #38bdf8;
+  box-shadow: 0 3px 12px rgba(56, 189, 248, 0.35);
+}
+.weight-revert-btn:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+.weight-revert-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+  border-color: rgba(75, 85, 99, 0.55);
+  background: rgba(31, 41, 55, 0.45);
+  color: #6b7280;
+  box-shadow: none;
+}
+.weight-revert-icon {
+  display: block;
+  pointer-events: none;
 }
 .lock-whatif-row td {
   vertical-align: top;
@@ -360,14 +545,57 @@ table.voices tr:nth-child(even) td {
   cursor: pointer;
 }
 .lock-label input { margin-right: 0.25rem; }
+/* What-if opens as a floating panel so the table row height stays fixed (no layout jump). */
+.lock-whatif-cell {
+  position: relative;
+  vertical-align: top;
+}
+.whatif-details {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
 .whatif-details summary {
   cursor: pointer;
   color: #a5b4fc;
+  list-style: none;
+}
+.whatif-details summary::-webkit-details-marker {
+  display: none;
+}
+.whatif-panel {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 0.2rem);
+  z-index: 50;
+  min-width: 11rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.4rem 0.45rem;
+  margin: 0;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+/* No-JS: show alternatives when open (absolute; may briefly affect scroll). With JS (html.js-whatif), hide until pinned fixed. */
+.whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
+  display: block;
+}
+html.js-whatif .whatif-details[open] .whatif-panel:not(.whatif-panel--fixed) {
+  display: none !important;
+}
+.whatif-details[open] .whatif-panel.whatif-panel--fixed {
+  display: block;
+}
+.whatif-panel.whatif-panel--fixed {
+  position: fixed;
+  z-index: 100;
 }
 .whatif-list {
   list-style: none;
   padding: 0;
-  margin: 0.35rem 0 0 0;
+  margin: 0;
   max-height: 12rem;
   overflow-y: auto;
 }
@@ -381,7 +609,7 @@ table.voices tr:nth-child(even) td {
   gap: 0.25rem;
 }
 .whatif-item.current { color: #9ca3af; }
-.whatif-notes { font-family: ui-monospace, monospace; color: #e5e7eb; }
+.whatif-notes { font-family: "Noto Serif", Georgia, serif; color: #e5e7eb; }
 .whatif-cost { color: #6b7280; }
 .whatif-use-btn {
   background: #374151;
@@ -403,6 +631,29 @@ table.voices tr:nth-child(even) td {
     </style>
   </head>
   <body>
+{% macro weight_row(name, label, hint_html=none, extra_attrs='') -%}
+{% set wd = weights_defaults|default({}) %}
+<div class="weight-item">
+  <label for="{{ name }}">{{ label }}</label>
+  {% if hint_html %}
+  <span class="weight-hint">{{ hint_html|safe }}</span>
+  {% endif %}
+  <div class="weight-input-row">
+    <input
+      type="number"
+      id="{{ name }}"
+      name="{{ name }}"
+      data-default="{{ wd.get(name, '') }}"
+      value="{{ weights_form.get(name, '') }}"
+      {% if extra_attrs %} {{ extra_attrs|safe }}{% endif %}>
+    <button type="button" class="weight-revert-btn" data-revert-for="{{ name }}" title="Reset this field to its default value" aria-label="Revert {{ label|e }} to default" disabled>
+      <svg class="weight-revert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false" width="18" height="18">
+        <path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+{%- endmacro %}
     <div class="container">
 <h1>Chord Harmony Generator</h1>
 <p class="lead">
@@ -410,13 +661,13 @@ table.voices tr:nth-child(even) td {
 </p>
 
 {% if error %}
-  <div class="error" role="alert">{{ error }}</div>
+  <div class="error" role="alert">{{ error|display_music }}</div>
 {% endif %}
 
 {% with messages = get_flashed_messages(with_categories=True) %}
   {% if messages %}
     {% for category, message in messages %}
-      <div class="{% if category == 'error' %}error{% else %}notice-warn{% endif %}" role="alert">{{ message }}</div>
+      <div class="{% if category == 'error' %}error{% else %}notice-warn{% endif %}" role="alert">{{ message|display_music }}</div>
     {% endfor %}
   {% endif %}
 {% endwith %}
@@ -425,7 +676,7 @@ table.voices tr:nth-child(even) td {
   <div class="notice-warn sticky-notice-block" role="status">
     <strong>Previous result shown</strong>
     <ul class="sticky-notice-list">
-      {% for line in sticky_notices %}<li>{{ line }}</li>{% endfor %}
+      {% for line in sticky_notices %}<li>{{ line|display_music }}</li>{% endfor %}
     </ul>
   </div>
 {% endif %}
@@ -434,7 +685,7 @@ table.voices tr:nth-child(even) td {
   <div class="notice-warn ux-warn-bundle" role="status">
     <strong>Locks</strong>
     <ul class="ux-warn-list">
-      {% for w in ux_warnings %}<li>{{ w }}</li>{% endfor %}
+      {% for w in ux_warnings %}<li>{{ w|display_music }}</li>{% endfor %}
     </ul>
   </div>
 {% endif %}
@@ -454,97 +705,39 @@ table.voices tr:nth-child(even) td {
     </div>
   </div>
 
-  <details class="weights-section" {% if result %}open{% endif %}>
-    <summary>Weights &amp; ranges</summary>
-          <p class="hint" style="margin-bottom: 0.75rem;">Adjust voice-leading costs and pitch range. Leave blank to use defaults. Cost fields accept a wide range of numbers (including negatives for experimentation). Invalid values show an error instead of being ignored.</p>
+  <details class="weights-section">
+    <summary>Advanced options (weights &amp; ranges)</summary>
+          <p class="hint" style="margin-bottom: 0.75rem;">Adjust voice-leading costs and pitch range. Leave blank to use defaults (range low/high). Cost fields accept a wide range of numbers (including negatives for experimentation). Invalid values show an error instead of being ignored. Use the round ↶ button beside each field to reset it to the built-in default.</p>
           <div class="weights-grid">
-            <div class="weight-item">
-              <label for="cost_static">Static voice</label>
-              <input type="number" id="cost_static" name="cost_static" step="any" min="-10000000" max="10000000" placeholder="0.5" value="{{ weights_form.get('cost_static', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_stepwise">Stepwise motion</label>
-              <input type="number" id="cost_stepwise" name="cost_stepwise" step="any" min="-10000000" max="10000000" placeholder="0.2" value="{{ weights_form.get('cost_stepwise', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_medium_step">Medium step (3–5 semitones)</label>
-              <input type="number" id="cost_medium_step" name="cost_medium_step" step="any" min="-10000000" max="10000000" placeholder="0.5" value="{{ weights_form.get('cost_medium_step', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_large_leap_base">Large leap (base)</label>
-              <input type="number" id="cost_large_leap_base" name="cost_large_leap_base" step="any" min="-10000000" max="10000000" placeholder="1.5" value="{{ weights_form.get('cost_large_leap_base', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_large_leap_per">Large leap (per semitone)</label>
-              <input type="number" id="cost_large_leap_per" name="cost_large_leap_per" step="any" min="-10000000" max="10000000" placeholder="0.1" value="{{ weights_form.get('cost_large_leap_per', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_parallel_5_8">Parallel 5ths/8ves</label>
-              <input type="number" id="cost_parallel_5_8" name="cost_parallel_5_8" step="any" min="-10000000" max="10000000" placeholder="4" value="{{ weights_form.get('cost_parallel_5_8', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_direct_5_8">Direct (hidden) 5ths/8ves</label>
-              <input type="number" id="cost_direct_5_8" name="cost_direct_5_8" step="any" min="-10000000" max="10000000" placeholder="3" value="{{ weights_form.get('cost_direct_5_8', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_voice_crossing">Voice crossing</label>
-              <input type="number" id="cost_voice_crossing" name="cost_voice_crossing" step="any" min="-10000000" max="10000000" placeholder="2.5" value="{{ weights_form.get('cost_voice_crossing', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="bonus_contrary">Contrary motion (bonus, subtracted)</label>
-              <input type="number" id="bonus_contrary" name="bonus_contrary" step="any" min="-10000000" max="10000000" placeholder="0.25" value="{{ weights_form.get('bonus_contrary', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_wide_gap_base">Wide gap (base)</label>
-              <input type="number" id="cost_wide_gap_base" name="cost_wide_gap_base" step="any" min="-10000000" max="10000000" placeholder="1" value="{{ weights_form.get('cost_wide_gap_base', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_wide_gap_per">Wide gap (per semitone)</label>
-              <input type="number" id="cost_wide_gap_per" name="cost_wide_gap_per" step="any" min="-10000000" max="10000000" placeholder="0.1" value="{{ weights_form.get('cost_wide_gap_per', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_span_tight">Chord span too tight (cost)</label>
-              <input type="number" id="cost_span_tight" name="cost_span_tight" step="any" min="-10000000" max="10000000" placeholder="1" value="{{ weights_form.get('cost_span_tight', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="cost_span_wide">Chord span too wide (cost)</label>
-              <input type="number" id="cost_span_wide" name="cost_span_wide" step="any" min="-10000000" max="10000000" placeholder="1" value="{{ weights_form.get('cost_span_wide', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="spacing_octave">Spacing octave (semitones)</label>
-              <span class="weight-hint">Interval treated as an octave for wide-gap rules (default 12)</span>
-              <input type="number" id="spacing_octave" name="spacing_octave" min="1" max="96" placeholder="12" value="{{ weights_form.get('spacing_octave', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="span_tight_threshold">Span “tight” below (semitones)</label>
-              <span class="weight-hint">Penalize if chord span &lt; this (default 8)</span>
-              <input type="number" id="span_tight_threshold" name="span_tight_threshold" min="0" max="127" placeholder="8" value="{{ weights_form.get('span_tight_threshold', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="span_wide_threshold">Span “wide” above (semitones)</label>
-              <span class="weight-hint">Penalize if chord span &gt; this (default 24)</span>
-              <input type="number" id="span_wide_threshold" name="span_wide_threshold" min="0" max="127" placeholder="24" value="{{ weights_form.get('span_wide_threshold', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="range_low">Range low (MIDI)</label>
-              <span class="weight-hint">Lowest note allowed. Blank = auto (wider for 5–6 voices)</span>
-              <input type="number" id="range_low" name="range_low" min="0" max="127" placeholder="auto" value="{{ weights_form.get('range_low', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="range_high">Range high (MIDI)</label>
-              <span class="weight-hint">Highest note allowed. Blank = auto</span>
-              <input type="number" id="range_high" name="range_high" min="0" max="127" placeholder="auto" value="{{ weights_form.get('range_high', '') }}">
-            </div>
-            <div class="weight-item">
-              <label for="max_spread">Max chord spread (semitones)</label>
-              <span class="weight-hint">Max distance lowest→highest in one chord (default 31)</span>
-              <input type="number" id="max_spread" name="max_spread" min="1" max="127" placeholder="31" value="{{ weights_form.get('max_spread', '') }}">
-            </div>
+            {{ weight_row('cost_static', 'Static voice', none, 'step="any" min="-10000000" max="10000000" placeholder="0.5"') }}
+            {{ weight_row('cost_stepwise', 'Stepwise motion', none, 'step="any" min="-10000000" max="10000000" placeholder="0.2"') }}
+            {{ weight_row('cost_medium_step', 'Medium step (3–5 semitones)', none, 'step="any" min="-10000000" max="10000000" placeholder="0.5"') }}
+            {{ weight_row('cost_large_leap_base', 'Large leap (base)', none, 'step="any" min="-10000000" max="10000000" placeholder="1.5"') }}
+            {{ weight_row('cost_large_leap_per', 'Large leap (per semitone)', none, 'step="any" min="-10000000" max="10000000" placeholder="0.1"') }}
+            {{ weight_row('cost_parallel_5_8', 'Parallel 5ths/8ves', none, 'step="any" min="-10000000" max="10000000" placeholder="4"') }}
+            {{ weight_row('cost_direct_5_8', 'Direct (hidden) 5ths/8ves', none, 'step="any" min="-10000000" max="10000000" placeholder="3"') }}
+            {{ weight_row('cost_voice_crossing', 'Voice crossing', none, 'step="any" min="-10000000" max="10000000" placeholder="2.5"') }}
+            {{ weight_row('bonus_contrary', 'Contrary motion (bonus, subtracted)', none, 'step="any" min="-10000000" max="10000000" placeholder="0.25"') }}
+            {{ weight_row('cost_wide_gap_base', 'Wide gap (base)', none, 'step="any" min="-10000000" max="10000000" placeholder="1"') }}
+            {{ weight_row('cost_wide_gap_per', 'Wide gap (per semitone)', none, 'step="any" min="-10000000" max="10000000" placeholder="0.1"') }}
+            {{ weight_row('cost_span_tight', 'Chord span too tight (cost)', none, 'step="any" min="-10000000" max="10000000" placeholder="1"') }}
+            {{ weight_row('cost_span_wide', 'Chord span too wide (cost)', none, 'step="any" min="-10000000" max="10000000" placeholder="1"') }}
+            {{ weight_row('spacing_octave', 'Spacing octave (semitones)', 'Interval treated as an octave for wide-gap rules (default 12)', 'min="1" max="96" placeholder="12"') }}
+            {{ weight_row('span_tight_threshold', 'Span “tight” below (semitones)', 'Penalize if chord span &lt; this (default 8)', 'min="0" max="127" placeholder="8"') }}
+            {{ weight_row('span_wide_threshold', 'Span “wide” above (semitones)', 'Penalize if chord span &gt; this (default 24)', 'min="0" max="127" placeholder="24"') }}
+            {{ weight_row('range_low', 'Range low (MIDI)', 'Lowest note allowed. Blank = auto (wider for 5–6 voices)', 'min="0" max="127" placeholder="auto"') }}
+            {{ weight_row('range_high', 'Range high (MIDI)', 'Highest note allowed. Blank = auto', 'min="0" max="127" placeholder="auto"') }}
+            {{ weight_row('max_spread', 'Max chord spread (semitones)', 'Max distance lowest→highest in one chord (default 31)', 'min="1" max="127" placeholder="31"') }}
+            {{ weight_row('bonus_leading_tone', 'Leading tone → tonic (bonus, subtracted)', 'Reward when the leading tone of the next chord’s root moves up onto the root (default 0.35)', 'step="any" min="-10000000" max="10000000" placeholder="0.35"') }}
+            {{ weight_row('bonus_seventh_resolve', 'Seventh resolves down (bonus)', 'Reward when the chordal 7th moves down by step onto the next chord (default 0.35)', 'step="any" min="-10000000" max="10000000" placeholder="0.35"') }}
+            {{ weight_row('cost_slash_bass_mismatch', 'Slash bass mismatch', 'Penalty when the lowest note is not the requested slash bass (default 8; helps locked voicings)', 'step="any" min="-10000000" max="10000000" placeholder="8"') }}
+            {{ weight_row('max_voicings_per_chord', 'Max voicings per chord', 'Keep best internal-cost voicings before DP (default 400)', 'min="1" max="3000" placeholder="400"') }}
+            {{ weight_row('beam_width', 'Beam width (DP)', 'Keep this many best states per step; 0 = exact (slower). Very high values can be slow. Default 128', 'min="0" max="5000" placeholder="128"') }}
           </div>
   </details>
 
   <details class="midi-advanced">
-    <summary>MIDI advanced options</summary>
+    <summary>Advanced options (MIDI)</summary>
     <div class="midi-advanced-grid">
       <div>
         <label for="midi_mode">Playback mode</label>
@@ -591,18 +784,22 @@ table.voices tr:nth-child(even) td {
         <div class="field-group">
           <label>Chords</label>
           <div class="chords">
-            {{ result.chords | map(attribute='symbol') | join(' | ') }}
+            {% for c in result.chords %}{{ c.symbol|display_music }}{% if not loop.last %} | {% endif %}{% endfor %}
           </div>
         </div>
 
         <div class="field-group">
           <label>Voices (highest to lowest)</label>
+          <div class="voices-table-scroll result-font-step-up">
           <table class="voices">
         <thead>
-          <tr>
-            <th>Voice</th>
-            {% for idx in range(result_step_count) %}
-              <th>Step {{ idx + 1 }}</th>
+          <tr class="voices-header-row">
+            <th class="voices-th voices-th-corner" scope="col">Voice</th>
+            {% for chord in result.chords %}
+              <th class="voices-th voices-th-step" scope="col">
+                <span class="voices-step-line1">Step {{ loop.index }}</span>
+                <span class="voices-step-line2">{{ chord.symbol|display_music }}</span>
+              </th>
             {% endfor %}
           </tr>
         </thead>
@@ -611,7 +808,7 @@ table.voices tr:nth-child(even) td {
             <tr>
               <td>Voice {{ v_idx + 1 }}</td>
               {% for note in voice_notes %}
-                <td>{{ note }}</td>
+                <td>{{ note|display_music }}</td>
               {% endfor %}
             </tr>
           {% endfor %}
@@ -625,44 +822,50 @@ table.voices tr:nth-child(even) td {
                 </label>
                 <details class="whatif-details">
                   <summary>What if</summary>
-                  <ul class="whatif-list">
-                    {% for alt in alternatives_per_chord[step] %}
-                      <li class="whatif-item {{ 'current' if alt.is_current else '' }}">
-                        <span class="whatif-notes" title="MIDI: {{ alt.midi_str }}">{{ alt.note_names }}</span>
-                        <span class="whatif-cost">cost {{ alt.cost }}</span>
-                        {% if not alt.is_current %}
-                          <button type="button" class="whatif-use-btn" data-chord-index="{{ step }}" data-voicing="{{ alt.midi_json }}">Use this</button>
-                        {% else %}
-                          <span class="whatif-current-badge">current</span>
-                        {% endif %}
-                      </li>
-                    {% endfor %}
-                  </ul>
+                  <div class="whatif-panel" role="region" aria-label="Alternative voicings for this step">
+                    <ul class="whatif-list">
+                      {% for alt in alternatives_per_chord[step] %}
+                        <li class="whatif-item {{ 'current' if alt.is_current else '' }}">
+                          <span class="whatif-notes" title="MIDI: {{ alt.midi_str }}">{{ alt.note_names|display_music }}</span>
+                          <span class="whatif-cost">cost {{ alt.cost }}</span>
+                          {% if not alt.is_current %}
+                            <button type="button" class="whatif-use-btn" data-chord-index="{{ step }}" data-voicing="{{ alt.midi_json }}">Use this</button>
+                          {% else %}
+                            <span class="whatif-current-badge">current</span>
+                          {% endif %}
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  </div>
                 </details>
               </td>
             {% endfor %}
           </tr>
         </tbody>
       </table>
+          </div>
         </div>
 
         <div class="field-group">
           <label>Piano roll</label>
-          <div class="piano-roll-wrap">
-            <div class="piano-roll" style="grid-template-columns: auto repeat({{ result_step_count }}, minmax(28px, 1fr)); grid-template-rows: 22px repeat({{ piano_roll_num_pitches }}, 18px);">
+          <div class="piano-roll-wrap result-font-step-up">
+            <div class="piano-roll" style="grid-template-columns: auto repeat({{ result_step_count }}, minmax(28px, 1fr)); grid-template-rows: minmax(50px, auto) repeat({{ piano_roll_num_pitches }}, 20px);">
               <div class="pr-y-header" style="grid-row: 1; grid-column: 1;">Pitch</div>
-              {% for step in range(result_step_count) %}
-                <div class="pr-step-label" style="grid-row: 1; grid-column: {{ step + 2 }};">{{ step + 1 }}</div>
+              {% for chord in result.chords %}
+                <div class="pr-step-label" style="grid-row: 1; grid-column: {{ loop.index0 + 2 }};">
+                  <span class="pr-step-num">{{ loop.index }}</span>
+                  <span class="pr-chord-name">{{ chord.symbol|display_music }}</span>
+                </div>
               {% endfor %}
               {% for pitch_row in range(piano_roll_num_pitches) %}
                 {% set pitch = pitch_max - pitch_row %}
                 {% set pc = pitch % 12 %}
-                <div class="pr-y-block {% if pc in [0,2,4,5,7,9,11] %}natural{% else %}sharp{% endif %}" style="grid-row: {{ pitch_row + 2 }}; grid-column: 1;">{{ pitch | midi_to_name }}</div>
+                <div class="pr-y-block {% if pc in [0,2,4,5,7,9,11] %}natural{% else %}sharp{% endif %}" style="grid-row: {{ pitch_row + 2 }}; grid-column: 1;">{{ pitch | midi_to_name | display_music }}</div>
                 {% for step in range(result_step_count) %}
                   <div class="pr-cell" style="grid-row: {{ pitch_row + 2 }}; grid-column: {{ step + 2 }};">
                     {% for v_idx in range(result_num_voices) %}
                       {% if result.voices[v_idx][step] == pitch %}
-                    <div class="pr-note voice-{{ v_idx + 1 }}" title="Voice {{ v_idx + 1 }}, Step {{ step + 1 }}: {{ note_names_by_voice[v_idx][step] }}">{{ note_names_by_voice[v_idx][step] }}</div>
+                    <div class="pr-note voice-{{ v_idx + 1 }}" title="Voice {{ v_idx + 1 }}, Step {{ step + 1 }}: {{ note_names_by_voice[v_idx][step]|display_music }}">{{ note_names_by_voice[v_idx][step]|display_music }}</div>
                       {% endif %}
                     {% endfor %}
                   </div>
@@ -674,11 +877,11 @@ table.voices tr:nth-child(even) td {
       </div>
     </div>
 
-          <div class="download">
+          <div class="download result-font-step-up">
             {% if midi_available %}
               <a href="{{ url_for('download_midi') }}">⬇ Download MIDI (output.mid)</a>
             {% elif midi_export_error %}
-              <div class="notice-warn">{{ midi_export_error }}</div>
+              <div class="notice-warn">{{ midi_export_error|display_music }}</div>
             {% else %}
               <span class="hint">To export MIDI, install <code>music21</code> (already in <code>requirements.txt</code>).</span>
             {% endif %}
@@ -714,6 +917,75 @@ table.voices tr:nth-child(even) td {
   }
   filterPatternsByMode();
   modeSel.addEventListener("change", filterPatternsByMode);
+})();
+
+(function() {
+  if (window.__harmonyWeightRevertInit) return;
+  window.__harmonyWeightRevertInit = true;
+
+  function isAtDefault(input) {
+    var defRaw = input.getAttribute("data-default");
+    if (defRaw == null) defRaw = "";
+    var curRaw = (input.value || "").trim();
+    var defT = String(defRaw).trim();
+    if (defT === "" && curRaw === "") return true;
+    if (defT === "" || curRaw === "") return false;
+    var a = parseFloat(curRaw);
+    var b = parseFloat(defT);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      return Math.abs(a - b) < 1e-9;
+    }
+    return curRaw === defT;
+  }
+
+  function syncRevert(btn, input) {
+    try {
+      btn.disabled = isAtDefault(input);
+    } catch (e) { /* ignore per-field errors */ }
+  }
+
+  function findInputForButton(btn) {
+    var id = btn.getAttribute("data-revert-for");
+    if (!id) return null;
+    return document.getElementById(id);
+  }
+
+  var grid = document.querySelector(".weights-grid");
+  if (!grid) return;
+
+  function onInputOrChange(ev) {
+    var input = ev.target;
+    /* data-default may be "" (e.g. range auto); getAttribute("") is falsy so use hasAttribute */
+    if (!input || !input.hasAttribute || !input.hasAttribute("data-default")) return;
+    if (input.type !== "number") return;
+    var row = input.closest(".weight-input-row");
+    if (!row) return;
+    var btn = row.querySelector(".weight-revert-btn[data-revert-for]");
+    if (!btn) return;
+    syncRevert(btn, input);
+  }
+
+  grid.addEventListener("input", onInputOrChange);
+  grid.addEventListener("change", onInputOrChange);
+
+  grid.addEventListener("click", function(ev) {
+    var btn = ev.target && ev.target.closest && ev.target.closest(".weight-revert-btn[data-revert-for]");
+    if (!btn || btn.disabled) return;
+    var input = findInputForButton(btn);
+    if (!input) return;
+    try {
+      var d = input.getAttribute("data-default");
+      input.value = d != null ? String(d) : "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      syncRevert(btn, input);
+    } catch (e) { /* ignore */ }
+  });
+
+  grid.querySelectorAll(".weight-revert-btn[data-revert-for]").forEach(function(btn) {
+    var input = findInputForButton(btn);
+    if (input) syncRevert(btn, input);
+  });
 })();
 </script>
 
@@ -752,6 +1024,127 @@ table.voices tr:nth-child(even) td {
           setLocked(locked);
           form.submit();
         }
+      });
+    });
+
+    /* What-if: float panel with position:fixed so the voices table row height stays stable and the list is not clipped by horizontal scroll. */
+    function clearWhatIfPanel(panel) {
+      if (!panel) return;
+      panel.classList.remove("whatif-panel--fixed");
+      panel.style.left = "";
+      panel.style.top = "";
+      panel.style.width = "";
+    }
+    function positionWhatIfPanel(details) {
+      var panel = details.querySelector(".whatif-panel");
+      if (!panel || !details.open) return;
+      var r = details.getBoundingClientRect();
+      var vw = window.innerWidth || 800;
+      var vh = window.innerHeight || 600;
+      var margin = 8;
+      var w = Math.min(320, Math.max(0, vw - 2 * margin));
+      if (!Number.isFinite(w) || w < 48) {
+        w = Math.min(320, vw - 2 * margin);
+      }
+      if (!Number.isFinite(w) || w < 48) {
+        w = 200;
+      }
+      var maxLeft = Math.max(margin, vw - margin - w);
+      var left = Math.min(Math.max(margin, r.left), maxLeft);
+      if (!Number.isFinite(left)) {
+        left = margin;
+      }
+      var gap = 4;
+      /* ~12rem max list height from CSS; used to flip above the summary when near bottom of viewport */
+      var estPanelH = Math.min(12 * 16, vh - 2 * margin);
+      var top = r.bottom + gap;
+      if (top + estPanelH > vh - margin && r.top > estPanelH + margin + gap) {
+        top = r.top - estPanelH - gap;
+      }
+      if (top + estPanelH > vh - margin) {
+        top = Math.max(margin, vh - margin - estPanelH);
+      }
+      if (!Number.isFinite(top)) {
+        top = r.bottom + gap;
+      }
+      panel.classList.add("whatif-panel--fixed");
+      panel.style.left = left + "px";
+      panel.style.top = top + "px";
+      panel.style.width = w + "px";
+    }
+    var rafId = null;
+    function scheduleWhatIfReposition() {
+      if (rafId != null) return;
+      rafId = requestAnimationFrame(function() {
+        rafId = null;
+        document.querySelectorAll(".whatif-details[open]").forEach(positionWhatIfPanel);
+      });
+    }
+    var whatIfMoveBound = false;
+    var whatIfWinResize = function() {
+      scheduleWhatIfReposition();
+    };
+    var whatIfWinScroll = function() {
+      scheduleWhatIfReposition();
+    };
+    var whatIfVoicesScroll = function() {
+      scheduleWhatIfReposition();
+    };
+    var whatIfKeydown = function(ev) {
+      if (ev.key !== "Escape") return;
+      var open = document.querySelector(".whatif-details[open]");
+      if (!open) return;
+      ev.preventDefault();
+      open.removeAttribute("open");
+      clearWhatIfPanel(open.querySelector(".whatif-panel"));
+      syncWhatIfMoveListeners();
+    };
+    function attachWhatIfMoveListeners() {
+      if (whatIfMoveBound) return;
+      whatIfMoveBound = true;
+      window.addEventListener("resize", whatIfWinResize, { passive: true });
+      window.addEventListener("scroll", whatIfWinScroll, { passive: true, capture: true });
+      document.querySelectorAll(".voices-table-scroll").forEach(function(el) {
+        el.addEventListener("scroll", whatIfVoicesScroll, { passive: true });
+      });
+      document.addEventListener("keydown", whatIfKeydown, true);
+    }
+    function detachWhatIfMoveListeners() {
+      if (!whatIfMoveBound) return;
+      whatIfMoveBound = false;
+      /* Boolean capture matches addEventListener; object options are not always matched reliably on remove. */
+      window.removeEventListener("resize", whatIfWinResize, false);
+      window.removeEventListener("scroll", whatIfWinScroll, true);
+      document.querySelectorAll(".voices-table-scroll").forEach(function(el) {
+        el.removeEventListener("scroll", whatIfVoicesScroll, false);
+      });
+      document.removeEventListener("keydown", whatIfKeydown, true);
+    }
+    function syncWhatIfMoveListeners() {
+      if (document.querySelector(".whatif-details[open]")) {
+        attachWhatIfMoveListeners();
+      } else {
+        detachWhatIfMoveListeners();
+      }
+    }
+    document.querySelectorAll(".whatif-details").forEach(function(d) {
+      d.addEventListener("toggle", function() {
+        var panel = d.querySelector(".whatif-panel");
+        if (!panel) return;
+        if (!d.open) {
+          clearWhatIfPanel(panel);
+          syncWhatIfMoveListeners();
+          return;
+        }
+        document.querySelectorAll(".whatif-details[open]").forEach(function(other) {
+          if (other !== d) {
+            other.removeAttribute("open");
+            var p = other.querySelector(".whatif-panel");
+            clearWhatIfPanel(p);
+          }
+        });
+        positionWhatIfPanel(d);
+        syncWhatIfMoveListeners();
       });
     });
   })();

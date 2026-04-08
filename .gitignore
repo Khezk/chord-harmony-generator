@@ -5,3 +5,14 @@
 **/__pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Local env / secrets (e.g. FLASK_SECRET_KEY)
+.env
+.env.*
+!.env.example
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
